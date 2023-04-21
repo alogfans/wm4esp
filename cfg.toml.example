@@ -1,0 +1,5 @@
+[wm4esp]
+wifi_ssid = "Tsinghua-Secure"
+wifi_psk = "password"
+qweather_key = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+location = "101010200"
