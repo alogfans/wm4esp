@@ -53,3 +53,9 @@ impl From<serde_json::Error> for WmError {
         WmError::InternalError
     }
 }
+
+impl From<std::io::Error> for WmError {
+    fn from(_: std::io::Error) -> Self {
+        WmError::InternalError
+    }
+}

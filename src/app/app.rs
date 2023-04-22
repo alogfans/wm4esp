@@ -3,6 +3,7 @@ use super::weather::WeatherInfo;
 use crate::common::Config;
 use crate::display::{Color, Screen};
 use crate::error::Result;
+use crate::network::http::HttpServer;
 use crate::network::wifi::WifiDevice;
 use crate::peripheral::{dht20::DHT20, ssd1683::SSD1683};
 
@@ -110,80 +111,88 @@ fn show_detail(
     Ok(())
 }
 
-fn show_7d_forecast(screen: &mut Screen, weather: &WeatherInfo) -> Result<()> {
-    let screen_width = screen.get_width();
-    screen.rectangle(0, 136, screen_width, 16, Color::Red)?;
-    let line = "WEATHER FORECAST (7d)";
-    let x_pos = (screen_width - line.len() * 8) / 2; // center display
-    screen.text(x_pos, 136, 16, line, Color::White)?;
-
-    let line = format!("Day    Brief         Temp/°C HR/% Pr/% Wind");
-    screen.text(16, 160, 16, &line, Color::Red)?;
-    for (idx, entry) in weather.forecast.iter().enumerate() {
-        // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-        // 11-15  Cloudy        -1~ 12  74   0.0  NW 1-2
-        let line = format!(
-            "{}  {:12} {:>3}~{:<3}  {:2} {:3}    {:2} {}",
-            &entry.date[5..],
-            entry.text,
-            entry.temp_min,
-            entry.temp_max,
-            entry.humidity,
-            entry.precipitation,
-            entry.wind_dir,
-            entry.wind_scale
-        );
-        screen.text(16, 176 + idx * 16, 16, &line, Color::Black)?;
-    }
-    Ok(())
+trait Window {
+    fn show(self, screen: &mut Screen) -> Result<()>;
 }
 
-fn show_24h_forecast(screen: &mut Screen, weather: &WeatherInfo) -> Result<()> {
-    let screen_width = screen.get_width();
-    screen.rectangle(0, 136, screen_width, 16, Color::Red)?;
-    let line = "WEATHER FORECAST (24h)";
-    let x_pos = (screen_width - line.len() * 8) / 2; // center display
-    screen.text(x_pos, 136, 16, line, Color::White)?;
+struct Forecast7dWindow<'a>(&'a WeatherInfo);
+struct Forecast24hWindow<'a>(&'a WeatherInfo);
+struct QuoteWindow;
 
-    // y == 160
-    // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-    // Hour   Brief   Temp/°C  Hour   Brief   Temp/°C
-    // 13:00  Cloudy       -1
-    let line = format!("Hour   Brief   Temp/°C  Hour   Brief   Temp/°C");
-    screen.text(16, 160, 16, &line, Color::Red)?;
-    if weather.hour.len() >= 14 {
-        for idx in 0..7 {
-            let entry_left = &weather.hour[idx];
-            let entry_right = &weather.hour[idx + 7];
+impl Window for Forecast7dWindow<'_> {
+    fn show(self, screen: &mut Screen) -> Result<()> {
+        show_window_title(screen, "WEATHER FORECAST (7 DAY)")?;
+        let line = format!("Day    Brief         Temp/°C HR/% Pr/% Wind");
+        screen.text(16, 160, 16, &line, Color::Red)?;
+        for (idx, entry) in self.0.forecast.iter().enumerate() {
+            // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+            // 11-15  Cloudy        -1~ 12  74   0.0  NW 1-2
             let line = format!(
-                "{}  {:11} {:>3}  {}  {:11} {:>3} ",
-                &entry_left.time[11..=15],
-                entry_left.text,
-                entry_left.temperature,
-                &entry_right.time[11..=15],
-                entry_right.text,
-                entry_right.temperature,
+                "{}  {:12} {:>3}~{:<3}  {:2} {:3}    {:2} {}",
+                &entry.date[5..],
+                entry.text,
+                entry.temp_min,
+                entry.temp_max,
+                entry.humidity,
+                entry.precipitation,
+                entry.wind_dir,
+                entry.wind_scale
             );
             screen.text(16, 176 + idx * 16, 16, &line, Color::Black)?;
         }
+        Ok(())
     }
-    Ok(())
 }
 
-fn show_quote(screen: &mut Screen) -> Result<()> {
+impl Window for Forecast24hWindow<'_> {
+    fn show(self, screen: &mut Screen) -> Result<()> {
+        show_window_title(screen, "WEATHER FORECAST (24 HOURS)")?;
+        // y == 160
+        // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+        // Hour   Brief   Temp/°C  Hour   Brief   Temp/°C
+        // 13:00  Cloudy       -1
+        let line = format!("Hour   Brief   Temp/°C  Hour   Brief   Temp/°C");
+        screen.text(16, 160, 16, &line, Color::Red)?;
+        if self.0.hour.len() >= 14 {
+            for idx in 0..7 {
+                let entry_left = &self.0.hour[idx];
+                let entry_right = &self.0.hour[idx + 7];
+                let line = format!(
+                    "{}  {:11} {:>3}  {}  {:11} {:>3} ",
+                    &entry_left.time[11..=15],
+                    entry_left.text,
+                    entry_left.temperature,
+                    &entry_right.time[11..=15],
+                    entry_right.text,
+                    entry_right.temperature,
+                );
+                screen.text(16, 176 + idx * 16, 16, &line, Color::Black)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Window for QuoteWindow {
+    fn show(self, screen: &mut Screen) -> Result<()> {
+        show_window_title(screen, "QUOTE")?;
+        let idx = random::<usize>() % QUOTE_LIST.lines().count();
+        let mut quote = QUOTE_LIST.lines();
+        for _ in 0..idx {
+            _ = quote.next();
+        }
+        let quote = quote.next().unwrap_or_default();
+        let quote = reformat(quote, 46);
+        screen.text(16, 176, 16, &quote, Color::Black)?;
+        Ok(())
+    }
+}
+
+fn show_window_title(screen: &mut Screen, title: &str) -> Result<()> {
     let screen_width = screen.get_width();
     screen.rectangle(0, 136, screen_width, 16, Color::Red)?;
-    let line = "QUOTE";
-    let x_pos = (screen_width - line.len() * 8) / 2; // center display
-    screen.text(x_pos, 136, 16, line, Color::White)?;
-    let idx = random::<usize>() % QUOTE_LIST.lines().count();
-    let mut quote = QUOTE_LIST.lines();
-    for _ in 0..idx {
-        _ = quote.next();
-    }
-    let quote = quote.next().unwrap_or_default();
-    let quote = reformat(quote, 46);
-    screen.text(16, 176, 16, &quote, Color::Black)?;
+    let x_pos = (screen_width - title.len() * 8) / 2; // center display
+    screen.text(x_pos, 136, 16, title, Color::White)?;
     Ok(())
 }
 
@@ -221,6 +230,9 @@ pub fn app_main(
     wifi: WifiDevice,
     conf: Config,
 ) -> Result<()> {
+    let mut httpd = HttpServer::new()?;
+    httpd.add_handlers()?;
+
     let mut screen = Screen::new(conf.screen_width, conf.screen_height, Color::Red);
     let mut weather = WeatherInfo::new(conf.location, conf.qweather_key);
 
@@ -238,15 +250,12 @@ pub fn app_main(
         show_status(&mut screen, &wifi, &weather)?;
         show_brief(&mut screen, &weather, &now, sensor)?;
         show_detail(&mut screen, &weather, cycle % 2 == 0)?;
-        if cycle % 3 == 0 {
-            show_7d_forecast(&mut screen, &weather)?;
-        }
-        if cycle % 3 == 1 {
-            show_24h_forecast(&mut screen, &weather)?;
-        }
-        if cycle % 3 == 2 {
-            show_quote(&mut screen)?;
-        }
+        match cycle % 3 {
+            0 => Forecast7dWindow(&weather).show(&mut screen)?,
+            1 => Forecast24hWindow(&weather).show(&mut screen)?,
+            2 => QuoteWindow.show(&mut screen)?,
+            _ => panic!("impossible"),
+        };
         ssd1683.draw(&screen)?;
 
         cycle += 1;

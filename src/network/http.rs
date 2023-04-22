@@ -3,7 +3,9 @@ use crate::error::Result;
 use embedded_svc::http::client::Client;
 use embedded_svc::http::{Headers, Status};
 use embedded_svc::io::Read;
+use embedded_svc::{http::Method, io::Write};
 use esp_idf_svc::http::client::EspHttpConnection;
+use esp_idf_svc::http::server::EspHttpServer;
 use flate2::read::GzDecoder;
 use std::io::Read as _;
 
@@ -58,4 +60,43 @@ impl HttpClient {
             }
         }
     }
+}
+
+pub struct HttpServer {
+    server: EspHttpServer,
+}
+
+impl HttpServer {
+    pub fn new() -> Result<Self> {
+        let server = EspHttpServer::new(&esp_idf_svc::http::server::Configuration::default())?;
+        Ok(HttpServer { server })
+    }
+
+    pub fn add_handlers(&mut self) -> Result<()> {
+        self.server.fn_handler("/", Method::Get, |request| {
+            let html = templated("Hello world!");
+            let mut response = request.into_ok_response()?;
+            response.write_all(html.as_bytes())?;
+            Ok(())
+        })?;
+        Ok(())
+    }
+}
+
+fn templated(content: impl AsRef<str>) -> String {
+    format!(
+        r#"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>ESP32 Web Server</title>
+</head>
+<body>
+    {}
+</body>
+</html>
+"#,
+        content.as_ref()
+    )
 }
