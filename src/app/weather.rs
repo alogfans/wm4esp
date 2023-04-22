@@ -1,5 +1,5 @@
 use crate::error::{Result, WmError};
-use crate::wifi::{Esp32HttpClient, HttpClient};
+use crate::network::http::HttpClient;
 use serde_json::Map;
 use serde_json::Value;
 use std::ops::Sub;
@@ -86,29 +86,27 @@ impl Default for WeatherInfo {
 }
 
 fn get_json_map(url: &str, key: &str) -> Result<Map<String, Value>> {
-    let mut client = Esp32HttpClient::new()?;
+    let mut client = HttpClient::new()?;
     let result = client.get(url)?;
-    if let Some(result) = result {
-        let parsed: Value = serde_json::from_str(&result)?;
-        let now = parsed[key].as_object();
-        if let Some(now) = now {
-            return Ok(now.clone());
-        }
+    let parsed: Value = serde_json::from_str(&result)?;
+    let now = parsed[key].as_object();
+    if let Some(now) = now {
+        Ok(now.clone())
+    } else {
+        Err(WmError::InvalidArgument)
     }
-    Err(WmError::InvalidArgument)
 }
 
 fn get_json_vector(url: &str, key: &str) -> Result<Vec<Value>> {
-    let mut client = Esp32HttpClient::new()?;
+    let mut client = HttpClient::new()?;
     let result = client.get(url)?;
-    if let Some(result) = result {
-        let parsed: Value = serde_json::from_str(&result)?;
-        let now = parsed[key].as_array();
-        if let Some(now) = now {
-            return Ok(now.clone());
-        }
+    let parsed: Value = serde_json::from_str(&result)?;
+    let now = parsed[key].as_array();
+    if let Some(now) = now {
+        Ok(now.clone())
+    } else {
+        Err(WmError::InvalidArgument)
     }
-    Err(WmError::InvalidArgument)
 }
 
 macro_rules! json_str {

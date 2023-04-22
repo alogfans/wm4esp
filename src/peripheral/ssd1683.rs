@@ -1,5 +1,4 @@
-use super::Screen;
-use super::{Color, Device};
+use crate::display::{Color, Screen};
 use crate::error::{Result, WmError};
 use esp_idf_hal::{gpio, spi, units};
 use std::thread::sleep;
@@ -66,6 +65,56 @@ impl SSD1683<'_> {
         Ok(context)
     }
 
+    pub fn draw(&mut self, screen: &Screen) -> Result<()> {
+        self.reset()?;
+
+        self.send_command(DRIVER_CONTROL)?;
+        self.send_data(&[
+            (screen.get_height() - 1) as u8,
+            ((screen.get_height() - 1) >> 8) as u8,
+            0,
+        ])?;
+        self.send_command_data(WRITE_DUMMY, 0x1B)?;
+        self.send_command_data(WRITE_GATELINE, 0x0B)?;
+        self.send_command_data(DATA_MODE, 0x03)?;
+        self.send_command(SET_RAMXPOS)?;
+        self.send_data(&[0, (screen.get_width() / 8 - 1) as u8])?;
+        self.send_command(SET_RAMYPOS)?;
+        self.send_data(&[
+            0,
+            0,
+            (screen.get_height() - 1) as u8,
+            ((screen.get_height() - 1) >> 8) as u8,
+        ])?;
+        self.send_command_data(WRITE_VCOM, 0x70)?;
+        self.send_command(WRITE_BORDER)?;
+        match screen.get_border_color() {
+            Color::White => self.send_data(&[0b00000001])?,
+            Color::Black => self.send_data(&[0b00000000])?,
+            Color::Red => self.send_data(&[0b00000110])?,
+            _ => {
+                return Err(WmError::InvalidArgument);
+            }
+        }
+
+        self.send_command_data(SET_RAMXCOUNT, 0x00)?;
+        self.send_command(SET_RAMYCOUNT)?;
+        self.send_data(&[0x00, 0x00])?;
+
+        let data = self.build_ram_data(screen, Color::White);
+        self.send_command(WRITE_RAM)?;
+        self.send_data(&data)?;
+
+        let data = self.build_ram_data(screen, Color::Red);
+        self.send_command(WRITE_ALTRAM)?;
+        self.send_data(&data)?;
+
+        self.wait_for_busy();
+        self.send_command(MASTER_ACTIVATE)?;
+
+        Ok(())
+    }
+
     fn wait_for_busy(&self) {
         while self.busy_pin.is_high() {
             sleep(Duration::from_millis(10));
@@ -114,57 +163,5 @@ impl SSD1683<'_> {
             }
         }
         data
-    }
-}
-
-impl Device for SSD1683<'_> {
-    fn draw(&mut self, screen: &Screen) -> Result<()> {
-        self.reset()?;
-
-        self.send_command(DRIVER_CONTROL)?;
-        self.send_data(&[
-            (screen.get_height() - 1) as u8,
-            ((screen.get_height() - 1) >> 8) as u8,
-            0,
-        ])?;
-        self.send_command_data(WRITE_DUMMY, 0x1B)?;
-        self.send_command_data(WRITE_GATELINE, 0x0B)?;
-        self.send_command_data(DATA_MODE, 0x03)?;
-        self.send_command(SET_RAMXPOS)?;
-        self.send_data(&[0, (screen.get_width() / 8 - 1) as u8])?;
-        self.send_command(SET_RAMYPOS)?;
-        self.send_data(&[
-            0,
-            0,
-            (screen.get_height() - 1) as u8,
-            ((screen.get_height() - 1) >> 8) as u8,
-        ])?;
-        self.send_command_data(WRITE_VCOM, 0x70)?;
-        self.send_command(WRITE_BORDER)?;
-        match screen.get_border_color() {
-            Color::White => self.send_data(&[0b00000001])?,
-            Color::Black => self.send_data(&[0b00000000])?,
-            Color::Red => self.send_data(&[0b00000110])?,
-            _ => {
-                return Err(WmError::InvalidArgument);
-            }
-        }
-
-        self.send_command_data(SET_RAMXCOUNT, 0x00)?;
-        self.send_command(SET_RAMYCOUNT)?;
-        self.send_data(&[0x00, 0x00])?;
-
-        let data = self.build_ram_data(screen, Color::White);
-        self.send_command(WRITE_RAM)?;
-        self.send_data(&data)?;
-
-        let data = self.build_ram_data(screen, Color::Red);
-        self.send_command(WRITE_ALTRAM)?;
-        self.send_data(&data)?;
-
-        self.wait_for_busy();
-        self.send_command(MASTER_ACTIVATE)?;
-
-        Ok(())
     }
 }

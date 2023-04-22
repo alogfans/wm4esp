@@ -7,15 +7,11 @@ use esp_idf_svc::http::client::EspHttpConnection;
 use flate2::read::GzDecoder;
 use std::io::Read as _;
 
-pub trait HttpClient {
-    fn get(&mut self, uri: &str) -> Result<Option<String>>;
-}
-
-pub struct Esp32HttpClient {
+pub struct HttpClient {
     client: Client<EspHttpConnection>,
 }
 
-impl Esp32HttpClient {
+impl HttpClient {
     pub fn new() -> Result<Self> {
         let conn = EspHttpConnection::new(&esp_idf_svc::http::client::Configuration {
             use_global_ca_store: true,
@@ -23,12 +19,10 @@ impl Esp32HttpClient {
             ..Default::default()
         })?;
         let client = Client::wrap(conn);
-        Ok(Esp32HttpClient { client })
+        Ok(HttpClient { client })
     }
-}
 
-impl HttpClient for Esp32HttpClient {
-    fn get(&mut self, url: &str) -> Result<Option<String>> {
+    pub fn get(&mut self, url: &str) -> Result<String> {
         let request = self.client.get(url.as_ref())?;
         let response = request.submit()?;
         let status = response.status();
@@ -53,14 +47,14 @@ impl HttpClient for Esp32HttpClient {
                     let mut d = GzDecoder::new(result.as_slice());
                     let mut result = String::new();
                     d.read_to_string(&mut result).unwrap();
-                    return Ok(Some(result));
+                    return Ok(result);
                 } else {
                     let result = String::from(std::str::from_utf8(&result)?);
-                    return Ok(Some(result));
+                    return Ok(result);
                 }
             }
             _ => {
-                return Ok(None);
+                return Ok(String::from(""));
             }
         }
     }

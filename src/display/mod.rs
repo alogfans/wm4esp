@@ -1,7 +1,7 @@
-pub mod device;
-pub mod screen;
-pub mod ssd1683;
+mod display;
+mod font_16;
+mod font_32;
+mod font_64;
 
-pub use device::Device;
-pub use screen::Color;
-pub use screen::Screen;
+pub use display::Color;
+pub use display::Screen;

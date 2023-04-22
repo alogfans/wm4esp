@@ -1,5 +1,5 @@
+use super::{font_16, font_32, font_64};
 use crate::error::{Result, WmError};
-use crate::resource;
 
 #[derive(Clone, PartialEq, Copy)]
 pub enum Color {
@@ -62,8 +62,7 @@ impl Screen {
 
     fn set_pixel(&mut self, x: usize, y: usize, color: Color) -> Result<()> {
         if x >= self.width || y >= self.height {
-            // return Err(WmError::InvalidArgument);
-            return Ok(());
+            return Err(WmError::InvalidArgument);
         }
         let pos = x + y * self.width;
         match color {
@@ -102,8 +101,7 @@ impl Screen {
     ) -> Result<()> {
         if height * width / 8 != bitmap.len() || x + width > self.width || y + height > self.height
         {
-            // return Err(WmError::InvalidArgument);
-            return Ok(());
+            return Err(WmError::InvalidArgument);
         }
         for bmp_x in 0..width {
             for bmp_y in 0..height {
@@ -131,8 +129,7 @@ impl Screen {
         color: Color,
     ) -> Result<()> {
         if x + width > self.width || y + height > self.height {
-            // return Err(WmError::InvalidArgument);
-            return Ok(());
+            return Err(WmError::InvalidArgument);
         }
         for bmp_x in 0..width {
             for bmp_y in 0..height {
@@ -151,9 +148,9 @@ impl Screen {
         color: Color,
     ) -> Result<usize> {
         let extract_font = match fontsize {
-            16 => resource::font_16::extract_font,
-            32 => resource::font_32::extract_font,
-            64 => resource::font_64::extract_font,
+            16 => font_16::extract_font,
+            32 => font_32::extract_font,
+            64 => font_64::extract_font,
             _ => {
                 return Err(WmError::InvalidArgument);
             }

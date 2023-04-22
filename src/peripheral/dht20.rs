@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Result, WmError};
 use esp_idf_hal::{gpio, i2c, units};
 use std::thread::sleep;
 use std::time::Duration;
@@ -48,8 +48,11 @@ impl DHT20<'_> {
         raw += buffer[5] as u32;
         let temperature = raw as f32 * 1.9073486328125e-4 - 50.0;
 
-        crc_check(&buffer);
-        Ok((temperature, humidity))
+        if crc_check(&buffer) {
+            Ok((temperature, humidity))
+        } else {
+            Err(WmError::InternalError)
+        }
     }
 
     fn read_status(&mut self) -> Result<u8> {
