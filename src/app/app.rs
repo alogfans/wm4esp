@@ -20,8 +20,14 @@ fn show_status(screen: &mut Screen, wifi: &WifiDevice, weather: &WeatherInfo) ->
         weather.last_update().hour(),
         weather.last_update().minute()
     );
-    let x_pos = screen.get_width() - 8 * (1 + line.len());
-    screen.text(x_pos, 0, 16, &line, Color::Black)?;
+    screen.text(16, 0, 16, &line, Color::Black)?;
+    Ok(())
+}
+
+fn show_current_time(screen: &mut Screen, now: &OffsetDateTime) -> Result<()> {
+    //                   19:47
+    let text = format!("                  {:02}:{:02}", now.hour(), now.minute());
+    screen.text(16, 16, 32, &text, Color::Black)?;
     Ok(())
 }
 
@@ -31,28 +37,28 @@ fn show_brief(
     now: &OffsetDateTime,
     sensor: (f32, f32),
 ) -> Result<()> {
-    let text = format!("{:02}", now.hour());
-    screen.text(16, 16, 32, &text, Color::InvRed)?;
-
+    // 04-22 Wednesday   19:47
     let text = format!(
-        "   {} {:04}-{:02}-{:02}",
-        now.weekday(),
-        now.year(),
+        "{:02}-{:02} {:9}",
         now.month() as i32,
-        now.day()
+        now.day(),
+        now.weekday().to_string()
     );
     screen.text(16, 16, 32, &text, Color::Red)?;
+    show_current_time(screen, now)?;
 
     let temperature = format!("{:.1}", sensor.0);
     let humidity = format!("{:.1}", sensor.1);
     let temperature = temperature.split_once('.').unwrap();
     let humidity = humidity.split_once('.').unwrap();
 
-    let line = format!(
-        "{} {}|{}",
-        weather.now.text, weather.now.temperature, temperature.0
-    );
-    let x_cursor = screen.text(16, 48, 32, &line, Color::Black)?;
+    let line = format!("{} {}", weather.now.text, weather.now.temperature);
+    let x_cursor = screen.text(16, 48, 32, &line, Color::Red)?;
+    let line = format!("°C");
+    screen.text(x_cursor, 60, 16, &line, Color::Red)?;
+
+    let line = format!("{}", temperature.0);
+    let x_cursor = screen.text(256, 48, 32, &line, Color::Black)?;
     let line = format!(".{}°C ", temperature.1);
     let x_cursor = screen.text(x_cursor, 60, 16, &line, Color::Black)?;
     let line = format!("{}", humidity.0);
@@ -121,7 +127,7 @@ struct QuoteWindow;
 
 impl Window for Forecast7dWindow<'_> {
     fn show(self, screen: &mut Screen) -> Result<()> {
-        show_window_title(screen, "WEATHER FORECAST (7 DAY)")?;
+        show_window_title(screen, "WEATHER FORECAST (7 DAYS)")?;
         let line = format!("Day    Brief         Temp/°C HR/% Pr/% Wind");
         screen.text(16, 160, 16, &line, Color::Red)?;
         for (idx, entry) in self.0.forecast.iter().enumerate() {
@@ -151,14 +157,14 @@ impl Window for Forecast24hWindow<'_> {
         // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
         // Hour   Brief   Temp/°C  Hour   Brief   Temp/°C
         // 13:00  Cloudy       -1
-        let line = format!("Hour   Brief   Temp/°C  Hour   Brief   Temp/°C");
+        let line = format!("Hour   Brief  Temp/°C  Hour   Brief  Temp/°C");
         screen.text(16, 160, 16, &line, Color::Red)?;
         if self.0.hour.len() >= 14 {
             for idx in 0..7 {
                 let entry_left = &self.0.hour[idx];
                 let entry_right = &self.0.hour[idx + 7];
                 let line = format!(
-                    "{}  {:11} {:>3}  {}  {:11} {:>3} ",
+                    "{}  {:11}{:>3}  {}  {:11}{:>3} ",
                     &entry_left.time[11..=15],
                     entry_left.text,
                     entry_left.temperature,
@@ -216,11 +222,26 @@ fn reformat(input: &str, width: usize) -> String {
     output
 }
 
-fn should_refresh_screen() -> bool {
+#[derive(Clone, PartialEq, Copy, Debug)]
+enum Action {
+    Screen,
+    TimeOnly,
+    None,
+}
+
+fn refresh_action() -> Action {
     let now = now_localtime();
-    match now.hour() {
+    if now.second() != 0 {
+        return Action::None;
+    }
+    let screen_update = match now.hour() {
         23 | 0..=6 => now.minute() == 0,
         _ => now.minute() % 5 == 0,
+    };
+    if screen_update {
+        Action::Screen
+    } else {
+        Action::TimeOnly
     }
 }
 
@@ -237,16 +258,31 @@ pub fn app_main(
     let mut weather = WeatherInfo::new(conf.location, conf.qweather_key);
 
     let mut cycle = 0;
+    let mut first_draw = true;
     loop {
-        if !should_refresh_screen() {
-            sleep(Duration::from_secs(60));
+        let mut action = refresh_action();
+        if first_draw {
+            action = Action::Screen;
+            first_draw = false;
+        }
+
+        if action == Action::None {
+            sleep(Duration::from_secs(1));
             continue;
         }
-        let now = now_localtime();
-        weather.try_update();
-        let sensor = dht20.read()?;
 
         screen.clear(Color::White);
+        let now = now_localtime();
+        if action == Action::TimeOnly {
+            // show_current_time(&mut screen, &now)?;
+            // ssd1683._draw_partial(&screen, 19 * 16, 24 * 16, 16, 48)?;
+            sleep(Duration::from_secs(1));
+            continue;
+        }
+
+        assert_eq!(action, Action::Screen);
+        weather.try_update();
+        let sensor = dht20.read()?;
         show_status(&mut screen, &wifi, &weather)?;
         show_brief(&mut screen, &weather, &now, sensor)?;
         show_detail(&mut screen, &weather, cycle % 2 == 0)?;
@@ -256,9 +292,9 @@ pub fn app_main(
             2 => QuoteWindow.show(&mut screen)?,
             _ => panic!("impossible"),
         };
-        ssd1683.draw(&screen)?;
+        ssd1683.draw(&screen, cycle % 3 != 0)?;
 
         cycle += 1;
-        sleep(Duration::from_secs(60));
+        sleep(Duration::from_secs(1));
     }
 }
