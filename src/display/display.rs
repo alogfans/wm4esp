@@ -11,15 +11,15 @@ pub enum Color {
 }
 
 pub struct Screen {
-    height: usize,
     width: usize,
+    height: usize,
     black_bitmap: Vec<u8>,
     red_bitmap: Vec<u8>,
     border_color: Color,
 }
 
 impl Screen {
-    pub fn new(height: usize, width: usize, border_color: Color) -> Self {
+    pub fn new(width: usize, height: usize, border_color: Color) -> Self {
         let mut black_bitmap = Vec::new();
         black_bitmap.resize(height * width / 8, 0);
         let mut red_bitmap = Vec::new();
