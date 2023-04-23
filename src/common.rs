@@ -12,4 +12,6 @@ pub struct Config {
     pub screen_width: usize,
     #[default(300)]
     pub screen_height: usize,
+    #[default("")]
+    pub city: &'static str,
 }

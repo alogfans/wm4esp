@@ -29,6 +29,7 @@ pub struct WeatherNow {
     pub aqi_primary: String,
     pub aqi_pm10: i32,
     pub aqi_pm2p5: i32,
+    pub icon: i32,
 }
 
 #[derive(Default)]
@@ -42,6 +43,7 @@ pub struct WeatherHour {
     pub wind_dir: String,
     pub wind_scale: String,
     pub wind_speed: i32,
+    pub icon: i32,
 }
 
 #[derive(Default)]
@@ -54,6 +56,7 @@ pub struct WeatherForecast {
     pub precipitation: f32,
     pub wind_dir: String,
     pub wind_scale: String,
+    pub icon: i32,
 }
 
 pub struct WeatherInfo {
@@ -192,6 +195,7 @@ impl WeatherInfo {
                     aqi_primary: json_str!(aqi, "primary"),
                     aqi_pm10: json_i32!(aqi, "pm10"),
                     aqi_pm2p5: json_i32!(aqi, "pm2p5"),
+                    icon: json_i32!(weather, "icon"),
                 };
                 self.last_update = now;
             }
@@ -211,6 +215,7 @@ impl WeatherInfo {
                         wind_dir: json_str!(entry, "windDirDay"),
                         wind_scale: json_str!(entry, "windScaleDay"),
                         precipitation: json_f32!(entry, "precip"),
+                        icon: json_i32!(entry, "iconDay"),
                     };
                     self.forecast.push(result);
                 }
@@ -233,6 +238,7 @@ impl WeatherInfo {
                         wind_dir: json_str!(entry, "windDir"),
                         wind_scale: json_str!(entry, "windScale"),
                         wind_speed: json_i32!(entry, "windSpeed"),
+                        icon: json_i32!(entry, "icon"),
                     };
                     self.hour.push(result);
                 }

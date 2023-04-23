@@ -1,5 +1,6 @@
 use super::quotes::QUOTE_LIST;
 use super::weather::WeatherInfo;
+use super::weather_icons::extract_image;
 use crate::common::Config;
 use crate::display::{Color, Screen};
 use crate::error::Result;
@@ -13,192 +14,179 @@ use std::time::Duration;
 use time::OffsetDateTime;
 use time_macros::offset;
 
-fn show_status(screen: &mut Screen, wifi: &WifiDevice, weather: &WeatherInfo) -> Result<()> {
+fn show_status(
+    screen: &mut Screen,
+    city: &str,
+    wifi: &WifiDevice,
+    weather: &WeatherInfo,
+    now: &OffsetDateTime,
+) -> Result<()> {
     let line = format!(
-        "{} {:02}:{:02}",
+        "{} | {} | {:02}:{:02} | {:02}:{:02}",
+        city,
         wifi.ip_addr().unwrap_or(String::from("Unknown IP")),
         weather.last_update().hour(),
-        weather.last_update().minute()
+        weather.last_update().minute(),
+        now.hour(),
+        now.minute()
     );
-    screen.text(16, 0, 16, &line, Color::Black)?;
+    screen.rectangle(
+        0,
+        screen.get_height() - 18,
+        screen.get_width(),
+        1,
+        Color::Black,
+    )?;
+    screen.text(8, screen.get_height() - 16, 16, &line, Color::Black)?;
     Ok(())
 }
 
-fn show_current_time(screen: &mut Screen, now: &OffsetDateTime) -> Result<()> {
-    //                   19:47
-    let text = format!("                  {:02}:{:02}", now.hour(), now.minute());
-    screen.text(16, 16, 32, &text, Color::Black)?;
-    Ok(())
-}
-
-fn show_brief(
+fn show_top_frame(
     screen: &mut Screen,
     weather: &WeatherInfo,
     now: &OffsetDateTime,
     sensor: (f32, f32),
 ) -> Result<()> {
-    // 04-22 Wednesday   19:47
+    let image = extract_image(weather.now.icon);
+    if let Some(image) = image {
+        screen.bitmap(8, 0, 64, 64, image, Color::Red)?;
+    }
+
     let text = format!(
-        "{:02}-{:02} {:9}",
+        "{} {:02}-{:02}\n{}°|",
+        now.weekday().to_string(),
         now.month() as i32,
         now.day(),
-        now.weekday().to_string()
+        weather.now.temperature
     );
-    screen.text(16, 16, 32, &text, Color::Red)?;
-    show_current_time(screen, now)?;
+
+    let x_offset = screen.text(80, 0, 32, &text, Color::Red)?;
+    let text = if weather.now.precipitation < 0.01 {
+        format!(
+            "{}\nAQI {} ({})",
+            weather.now.text, weather.now.aqi, weather.now.aqi_category
+        )
+    } else {
+        format!(
+            "{} ({:1} mm/h)\nAQI {} ({})",
+            weather.now.text, weather.now.precipitation, weather.now.aqi, weather.now.aqi_category
+        )
+    };
+    screen.text(x_offset, 30, 16, &text, Color::Black)?;
 
     let temperature = format!("{:.1}", sensor.0);
     let humidity = format!("{:.1}", sensor.1);
     let temperature = temperature.split_once('.').unwrap();
     let humidity = humidity.split_once('.').unwrap();
 
-    let line = format!("{} {}", weather.now.text, weather.now.temperature);
-    let x_cursor = screen.text(16, 48, 32, &line, Color::Red)?;
-    let line = format!("°C");
-    screen.text(x_cursor, 60, 16, &line, Color::Red)?;
-
     let line = format!("{}", temperature.0);
-    let x_cursor = screen.text(256, 48, 32, &line, Color::Black)?;
+    let x_cursor = screen.text(328, 0, 32, &line, Color::Black)?;
     let line = format!(".{}°C ", temperature.1);
-    let x_cursor = screen.text(x_cursor, 60, 16, &line, Color::Black)?;
+    screen.text(x_cursor, 12, 16, &line, Color::Black)?;
+
     let line = format!("{}", humidity.0);
-    let x_cursor = screen.text(x_cursor, 48, 32, &line, Color::Black)?;
+    let x_cursor = screen.text(328, 32, 32, &line, Color::Black)?;
     let line = format!(".{}%", humidity.1);
-    screen.text(x_cursor, 48 + 12, 16, &line, Color::Black)?;
+    screen.text(x_cursor, 32 + 16 - 4, 16, &line, Color::Black)?;
 
-    Ok(())
-}
+    screen.rectangle(0, 64 + 3, screen.get_width(), 1, Color::Red)?;
+    screen.rectangle(323, 0, 1, 64, Color::Red)?;
 
-fn show_detail(
-    screen: &mut Screen,
-    weather: &WeatherInfo,
-    aqi_info_in_right_panel: bool,
-) -> Result<()> {
-    let color = if weather.now.precipitation >= 50.0 {
-        Color::InvRed
-    } else {
-        Color::Black
-    };
-
-    let line = format!("Precipitation: {}%", weather.now.precipitation);
-    screen.text(16, 80, 16, &line, color)?;
-
-    let color = match weather.now.wind_scale {
-        0..=5 => Color::Black,
-        _ => Color::InvRed,
-    };
     let line = format!(
-        "Wind: {} {} ({} km/h)",
-        weather.now.wind_dir, weather.now.wind_scale, weather.now.wind_speed
+        "Wind: {} {} ({} km/h)\nHumidity: {}%",
+        weather.now.wind_dir, weather.now.wind_scale, weather.now.wind_speed, weather.now.humidity
     );
-    screen.text(16, 96, 16, &line, color)?;
-
-    let color = match weather.now.aqi {
-        0..=100 => Color::Black,
-        101..=200 => Color::Red,
-        _ => Color::InvRed,
-    };
-
-    let line = format!("AQI: {} ({})", weather.now.aqi, weather.now.aqi_category);
-    screen.text(16, 112, 16, &line, color)?;
-
-    let line = if aqi_info_in_right_panel {
-        format!(
-            "Primary: {}\nPM10: {} ug/m3\nPM2.5: {} ug/m3",
-            weather.now.aqi_primary, weather.now.aqi_pm10, weather.now.aqi_pm2p5
-        )
-    } else {
-        format!(
-            "Feels-like: {}°C\nHumidity: {}%\nPressure: {} kPa",
-            weather.now.feels_like, weather.now.humidity, weather.now.pressure
-        )
-    };
-    screen.text(screen.get_width() / 2, 80, 16, &line, Color::Black)?;
+    screen.text(8, 72, 16, &line, Color::Black)?;
+    let line = format!(
+        "PM  : {} ug/m3\nPM   : {} ug/m3",
+        weather.now.aqi_pm10, weather.now.aqi_pm2p5
+    );
+    screen.text(screen.get_width() / 2, 72, 16, &line, Color::Black)?;
+    let line = format!("  10\n  2.5");
+    screen.text(screen.get_width() / 2, 72 + 4, 16, &line, Color::Black)?;
+    screen.rectangle(0, 72 + 2 * 16 + 3, screen.get_width(), 2, Color::Red)?;
     Ok(())
 }
 
-trait Window {
-    fn show(self, screen: &mut Screen) -> Result<()>;
-}
-
-struct Forecast7dWindow<'a>(&'a WeatherInfo);
-struct Forecast24hWindow<'a>(&'a WeatherInfo);
-struct QuoteWindow;
-
-impl Window for Forecast7dWindow<'_> {
-    fn show(self, screen: &mut Screen) -> Result<()> {
-        show_window_title(screen, "WEATHER FORECAST (7 DAYS)")?;
-        let line = format!("Day    Brief         Temp/°C HR/% Pr/% Wind");
-        screen.text(16, 160, 16, &line, Color::Red)?;
-        for (idx, entry) in self.0.forecast.iter().enumerate() {
-            // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-            // 11-15  Cloudy        -1~ 12  74   0.0  NW 1-2
-            let line = format!(
-                "{}  {:12} {:>3}~{:<3}  {:2} {:3}    {:2} {}",
-                &entry.date[5..],
-                entry.text,
-                entry.temp_min,
-                entry.temp_max,
-                entry.humidity,
-                entry.precipitation,
-                entry.wind_dir,
-                entry.wind_scale
-            );
-            screen.text(16, 176 + idx * 16, 16, &line, Color::Black)?;
-        }
-        Ok(())
+fn get_bit(image: &[u8], size: usize, i: usize, j: usize) -> u8 {
+    let pos = i * size + j;
+    if image[pos / 8] & (1u8 << (7 - (pos % 8) as u8)) != 0 {
+        1
+    } else {
+        0
     }
 }
 
-impl Window for Forecast24hWindow<'_> {
-    fn show(self, screen: &mut Screen) -> Result<()> {
-        show_window_title(screen, "WEATHER FORECAST (24 HOURS)")?;
-        // y == 160
-        // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-        // Hour   Brief   Temp/°C  Hour   Brief   Temp/°C
-        // 13:00  Cloudy       -1
-        let line = format!("Hour   Brief  Temp/°C  Hour   Brief  Temp/°C");
-        screen.text(16, 160, 16, &line, Color::Red)?;
-        if self.0.hour.len() >= 14 {
-            for idx in 0..7 {
-                let entry_left = &self.0.hour[idx];
-                let entry_right = &self.0.hour[idx + 7];
-                let line = format!(
-                    "{}  {:11}{:>3}  {}  {:11}{:>3} ",
-                    &entry_left.time[11..=15],
-                    entry_left.text,
-                    entry_left.temperature,
-                    &entry_right.time[11..=15],
-                    entry_right.text,
-                    entry_right.temperature,
-                );
-                screen.text(16, 176 + idx * 16, 16, &line, Color::Black)?;
+fn build_32x32_image(code: i32) -> Vec<u8> {
+    if let Some(image) = extract_image(code) {
+        let mut new_image = Vec::new();
+        new_image.resize(32 * 32 / 8, 0);
+        for i in 0..32 {
+            for j in 0..32 {
+                let val = get_bit(image, 64, i * 2, j * 2)
+                    + get_bit(image, 64, i * 2 + 1, j * 2)
+                    + get_bit(image, 64, i * 2, j * 2 + 1)
+                    + get_bit(image, 64, i * 2 + 1, j * 2 + 1);
+                if val >= 2 {
+                    let pos = i * 32 + j;
+                    new_image[pos / 8] |= 1u8 << (7 - (pos % 8) as u8);
+                }
             }
         }
-        Ok(())
+        new_image
+    } else {
+        Vec::new()
     }
 }
 
-impl Window for QuoteWindow {
-    fn show(self, screen: &mut Screen) -> Result<()> {
-        show_window_title(screen, "QUOTE")?;
-        let idx = random::<usize>() % QUOTE_LIST.lines().count();
-        let mut quote = QUOTE_LIST.lines();
-        for _ in 0..idx {
-            _ = quote.next();
+fn show_left_frame(screen: &mut Screen, weather: &WeatherInfo) -> Result<()> {
+    // start from y = 112
+    let mut y_cursor = 112;
+    for idx in [2, 5, 8] {
+        let entry = &weather.hour[idx];
+        let image = build_32x32_image(entry.icon);
+        if !image.is_empty() {
+            screen.bitmap(8, y_cursor, 32, 32, &image, Color::Red)?;
         }
-        let quote = quote.next().unwrap_or_default();
-        let quote = reformat(quote, 46);
-        screen.text(16, 176, 16, &quote, Color::Black)?;
-        Ok(())
+        let text = format!("{}\n{}°C", &entry.time[11..=15], entry.temperature);
+        screen.text(8 + 32, y_cursor, 16, &text, Color::Black)?;
+        y_cursor += 32;
     }
+
+    screen.rectangle(0, y_cursor + 4, 114, 1, Color::Red)?;
+    y_cursor += 8;
+
+    for idx in [1, 2] {
+        let entry = &weather.forecast[idx];
+        let image = build_32x32_image(entry.icon);
+        if !image.is_empty() {
+            screen.bitmap(8, y_cursor, 32, 32, &image, Color::Red)?;
+        }
+        let text = format!(
+            "{}\n{}~{}°C",
+            &entry.date[5..=9],
+            entry.temp_min,
+            entry.temp_max
+        );
+        screen.text(8 + 32, y_cursor, 16, &text, Color::Black)?;
+        y_cursor += 32;
+    }
+
+    screen.rectangle(114, 112, 2, 170, Color::Red)?;
+
+    Ok(())
 }
 
-fn show_window_title(screen: &mut Screen, title: &str) -> Result<()> {
-    let screen_width = screen.get_width();
-    screen.rectangle(0, 136, screen_width, 16, Color::Red)?;
-    let x_pos = (screen_width - title.len() * 8) / 2; // center display
-    screen.text(x_pos, 136, 16, title, Color::White)?;
+fn show_quote(screen: &mut Screen) -> Result<()> {
+    let idx = random::<usize>() % QUOTE_LIST.lines().count();
+    let mut quote = QUOTE_LIST.lines();
+    for _ in 0..idx {
+        _ = quote.next();
+    }
+    let quote = quote.next().unwrap_or_default();
+    let quote = reformat(quote, 30);
+    screen.text(120, 112, 16, "Quote", Color::InvRed)?;
+    screen.text(120, 112 + 16, 16, &quote, Color::Black)?;
     Ok(())
 }
 
@@ -236,7 +224,7 @@ fn refresh_action() -> Action {
     }
     let screen_update = match now.hour() {
         23 | 0..=6 => now.minute() == 0,
-        _ => now.minute() % 5 == 0,
+        _ => now.minute() % 10 == 0,
     };
     if screen_update {
         Action::Screen
@@ -254,7 +242,7 @@ pub fn app_main(
     let mut httpd = HttpServer::new()?;
     httpd.add_handlers()?;
 
-    let mut screen = Screen::new(conf.screen_width, conf.screen_height, Color::Red);
+    let mut screen = Screen::new(conf.screen_width, conf.screen_height, Color::White);
     let mut weather = WeatherInfo::new(conf.location, conf.qweather_key);
 
     let mut cycle = 0;
@@ -274,8 +262,6 @@ pub fn app_main(
         screen.clear(Color::White);
         let now = now_localtime();
         if action == Action::TimeOnly {
-            // show_current_time(&mut screen, &now)?;
-            // ssd1683._draw_partial(&screen, 19 * 16, 24 * 16, 16, 48)?;
             sleep(Duration::from_secs(1));
             continue;
         }
@@ -283,17 +269,12 @@ pub fn app_main(
         assert_eq!(action, Action::Screen);
         weather.try_update();
         let sensor = dht20.read()?;
-        show_status(&mut screen, &wifi, &weather)?;
-        show_brief(&mut screen, &weather, &now, sensor)?;
-        show_detail(&mut screen, &weather, cycle % 2 == 0)?;
-        match cycle % 3 {
-            0 => Forecast7dWindow(&weather).show(&mut screen)?,
-            1 => Forecast24hWindow(&weather).show(&mut screen)?,
-            2 => QuoteWindow.show(&mut screen)?,
-            _ => panic!("impossible"),
-        };
-        ssd1683.draw(&screen, cycle % 3 != 0)?;
+        show_top_frame(&mut screen, &weather, &now, sensor)?;
+        show_left_frame(&mut screen, &weather)?;
+        show_quote(&mut screen)?;
 
+        show_status(&mut screen, conf.city, &wifi, &weather, &now)?;
+        ssd1683.draw(&screen, cycle % 3 != 0)?;
         cycle += 1;
         sleep(Duration::from_secs(1));
     }
