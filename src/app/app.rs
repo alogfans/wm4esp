@@ -10,7 +10,7 @@ use crate::peripheral::{dht20::DHT20, ssd1683::SSD1683};
 use rand::random;
 use std::thread::sleep;
 use std::time::Duration;
-use time::OffsetDateTime;
+use time::{OffsetDateTime, Weekday};
 use time_macros::offset;
 
 fn show_status(screen: &mut Screen, wifi: &WifiDevice, weather: &WeatherInfo) -> Result<()> {
@@ -31,6 +31,30 @@ fn show_current_time(screen: &mut Screen, now: &OffsetDateTime) -> Result<()> {
     Ok(())
 }
 
+fn weekday_to_string(weekday: Weekday, lang: &str) -> &'static str {
+    if lang == "cn" {
+        match weekday {
+            Weekday::Monday => "星期一",
+            Weekday::Tuesday => "星期二",
+            Weekday::Wednesday => "星期三",
+            Weekday::Thursday => "星期四",
+            Weekday::Friday => "星期五",
+            Weekday::Saturday => "星期六",
+            Weekday::Sunday => "星期日",
+        }
+    } else {
+        match weekday {
+            Weekday::Monday => "Monday",
+            Weekday::Tuesday => "Tuesday",
+            Weekday::Wednesday => "Wednesday",
+            Weekday::Thursday => "Thursday",
+            Weekday::Friday => "Friday",
+            Weekday::Saturday => "Saturday",
+            Weekday::Sunday => "Sunday",
+        }
+    }
+}
+
 fn show_brief(
     screen: &mut Screen,
     weather: &WeatherInfo,
@@ -42,7 +66,7 @@ fn show_brief(
         "{:02}-{:02} {:9}",
         now.month() as i32,
         now.day(),
-        now.weekday().to_string()
+        weekday_to_string(now.weekday(), "cn")
     );
     screen.text(16, 16, 32, &text, Color::Red)?;
     show_current_time(screen, now)?;
@@ -80,7 +104,8 @@ fn show_detail(
         Color::Black
     };
 
-    let line = format!("Precipitation: {}%", weather.now.precipitation);
+    let line = format!("降雨概率: {}%", weather.now.precipitation);
+    // let line = format!("Precipitation: {}%", weather.now.precipitation);
     screen.text(16, 80, 16, &line, color)?;
 
     let color = match weather.now.wind_scale {
@@ -88,9 +113,13 @@ fn show_detail(
         _ => Color::InvRed,
     };
     let line = format!(
-        "Wind: {} {} ({} km/h)",
-        weather.now.wind_dir, weather.now.wind_scale, weather.now.wind_speed
+        "{} 级{} ({} km/h)",
+        weather.now.wind_scale, weather.now.wind_dir, weather.now.wind_speed
     );
+    // let line = format!(
+    //     "Wind: {} {} ({} km/h)",
+    //     weather.now.wind_dir, weather.now.wind_scale, weather.now.wind_speed
+    // );
     screen.text(16, 96, 16, &line, color)?;
 
     let color = match weather.now.aqi {
@@ -99,17 +128,29 @@ fn show_detail(
         _ => Color::InvRed,
     };
 
-    let line = format!("AQI: {} ({})", weather.now.aqi, weather.now.aqi_category);
+    // let line: String = format!("AQI: {} ({})", weather.now.aqi, weather.now.aqi_category);
+    let line: String = format!("{} (AQI {})", weather.now.aqi_category, weather.now.aqi);
     screen.text(16, 112, 16, &line, color)?;
 
+    // let line = if aqi_info_in_right_panel {
+    //     format!(
+    //         "Primary: {}\nPM10: {} ug/m3\nPM2.5: {} ug/m3",
+    //         weather.now.aqi_primary, weather.now.aqi_pm10, weather.now.aqi_pm2p5
+    //     )
+    // } else {
+    //     format!(
+    //         "Feels-like: {}°C\nHumidity: {}%\nPressure: {} kPa",
+    //         weather.now.feels_like, weather.now.humidity, weather.now.pressure
+    //     )
+    // };
     let line = if aqi_info_in_right_panel {
         format!(
-            "Primary: {}\nPM10: {} ug/m3\nPM2.5: {} ug/m3",
+            "首要污染物: {}\nPM10: {} ug/m3\nPM2.5: {} ug/m3",
             weather.now.aqi_primary, weather.now.aqi_pm10, weather.now.aqi_pm2p5
         )
     } else {
         format!(
-            "Feels-like: {}°C\nHumidity: {}%\nPressure: {} kPa",
+            "体感温度: {}°C\n湿度: {}%\n气压: {} kPa",
             weather.now.feels_like, weather.now.humidity, weather.now.pressure
         )
     };
@@ -127,22 +168,36 @@ struct QuoteWindow;
 
 impl Window for Forecast7dWindow<'_> {
     fn show(self, screen: &mut Screen) -> Result<()> {
-        show_window_title(screen, "WEATHER FORECAST (7 DAYS)")?;
-        let line = format!("Day    Brief         Temp/°C HR/% Pr/% Wind");
+        // show_window_title(screen, "WEATHER FORECAST (7 DAYS)")?;
+        show_window_title(screen, "7 日天气预报")?;
+        // let line = format!("Day    Brief     Temp/°C HR/% Pr/% Wind");
+        let line = format!("日     天气    温度/°C 湿/% 雨/% 风力");
         screen.text(16, 160, 16, &line, Color::Red)?;
         for (idx, entry) in self.0.forecast.iter().enumerate() {
             // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
             // 11-15  Cloudy        -1~ 12  74   0.0  NW 1-2
+            // let line = format!(
+            //     "{}  {:12} {:>3}~{:<3}  {:2} {:3}    {:2} {}",
+            //     &entry.date[5..],
+            //     entry.text,
+            //     entry.temp_min,
+            //     entry.temp_max,
+            //     entry.humidity,
+            //     entry.precipitation,
+            //     entry.wind_dir,
+            //     entry.wind_scale
+            // );
+            // screen.text(16, 176 + idx * 16, 16, &line, Color::Black)?;
+            let line = format!("{}  {}", &entry.date[5..], entry.text);
+            screen.text(16, 176 + idx * 16, 16, &line, Color::Black)?;
             let line = format!(
-                "{}  {:12} {:>3}~{:<3}  {:2} {:3}    {:2} {}",
-                &entry.date[5..],
-                entry.text,
+                "                {:>3}~{:<3}  {:2} {:3}  {} 级{}",
                 entry.temp_min,
                 entry.temp_max,
                 entry.humidity,
                 entry.precipitation,
-                entry.wind_dir,
-                entry.wind_scale
+                entry.wind_scale,
+                entry.wind_dir
             );
             screen.text(16, 176 + idx * 16, 16, &line, Color::Black)?;
         }
@@ -152,27 +207,35 @@ impl Window for Forecast7dWindow<'_> {
 
 impl Window for Forecast24hWindow<'_> {
     fn show(self, screen: &mut Screen) -> Result<()> {
-        show_window_title(screen, "WEATHER FORECAST (24 HOURS)")?;
+        // show_window_title(screen, "WEATHER FORECAST (24 HOURS)")?;
+        show_window_title(screen, "24 小时天气预报")?;
         // y == 160
-        // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-        // Hour   Brief   Temp/°C  Hour   Brief   Temp/°C
-        // 13:00  Cloudy       -1
-        let line = format!("Hour   Brief  Temp/°C  Hour   Brief  Temp/°C");
-        screen.text(16, 160, 16, &line, Color::Red)?;
-        if self.0.hour.len() >= 14 {
-            for idx in 0..7 {
+        if self.0.hour.len() >= 16 {
+            for idx in 0..8 {
                 let entry_left = &self.0.hour[idx];
-                let entry_right = &self.0.hour[idx + 7];
+                let entry_right = &self.0.hour[idx + 8];
+                // let line = format!(
+                //     "{}  {:11}{:>3}° {}  {:11}{:>3}°",
+                //     &entry_left.time[11..=15],
+                //     entry_left.text,
+                //     entry_left.temperature,
+                //     &entry_right.time[11..=15],
+                //     entry_right.text,
+                //     entry_right.temperature,
+                // );
+                // screen.text(16, 160 + idx * 16, 16, &line, Color::Black)?;
                 let line = format!(
-                    "{}  {:11}{:>3}  {}  {:11}{:>3} ",
+                    "{}             {:>3}° {}             {:>3}°",
                     &entry_left.time[11..=15],
-                    entry_left.text,
                     entry_left.temperature,
                     &entry_right.time[11..=15],
-                    entry_right.text,
                     entry_right.temperature,
                 );
-                screen.text(16, 176 + idx * 16, 16, &line, Color::Black)?;
+                screen.text(16, 160 + idx * 16, 16, &line, Color::Black)?;
+                let line = format!("       {}", entry_left.text);
+                screen.text(16, 160 + idx * 16, 16, &line, Color::Black)?;
+                let line = format!("       {}", entry_right.text);
+                screen.text(200, 160 + idx * 16, 16, &line, Color::Black)?;
             }
         }
         Ok(())
@@ -181,7 +244,8 @@ impl Window for Forecast24hWindow<'_> {
 
 impl Window for QuoteWindow {
     fn show(self, screen: &mut Screen) -> Result<()> {
-        show_window_title(screen, "QUOTE")?;
+        // show_window_title(screen, "QUOTE")?;
+        show_window_title(screen, "名人名言")?;
         let idx = random::<usize>() % QUOTE_LIST.lines().count();
         let mut quote = QUOTE_LIST.lines();
         for _ in 0..idx {
@@ -197,7 +261,7 @@ impl Window for QuoteWindow {
 fn show_window_title(screen: &mut Screen, title: &str) -> Result<()> {
     let screen_width = screen.get_width();
     screen.rectangle(0, 136, screen_width, 16, Color::Red)?;
-    let x_pos = (screen_width - title.len() * 8) / 2; // center display
+    let x_pos = (screen_width - screen.text_len(16, title)) / 2; // center display
     screen.text(x_pos, 136, 16, title, Color::White)?;
     Ok(())
 }
@@ -236,7 +300,7 @@ fn refresh_action() -> Action {
     }
     let screen_update = match now.hour() {
         23 | 0..=6 => now.minute() == 0,
-        _ => now.minute() % 5 == 0,
+        _ => now.minute() % 10 == 0,
     };
     if screen_update {
         Action::Screen

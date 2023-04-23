@@ -175,4 +175,23 @@ impl Screen {
         }
         Ok(cursor_x)
     }
+
+    pub fn text_len(&self, fontsize: usize, text: &str) -> usize {
+        let mut cursor_x = 0;
+        let extract_font = match fontsize {
+            16 => font_16::extract_font,
+            32 => font_32::extract_font,
+            64 => font_64::extract_font,
+            _ => {
+                return 0;
+            }
+        };
+        for ch in text.chars() {
+            assert!(ch != '\n');
+            let font = extract_font(ch);
+            let width = font.len() / fontsize * 8;
+            cursor_x += width;
+        }
+        cursor_x
+    }
 }

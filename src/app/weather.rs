@@ -150,7 +150,7 @@ macro_rules! json_f32 {
 
 impl WeatherInfo {
     pub fn new(location: &str, key: &str) -> Self {
-        let param = format!("location={}&key={}&lang=en", location, key);
+        let param = format!("location={}&key={}&lang=cn", location, key);
         let weather_url = format!("https://devapi.qweather.com/v7/weather/now?{}", param);
         let aqi_url = format!("https://devapi.qweather.com/v7/air/now?{}", param);
         let weather_7d_url = format!("https://devapi.qweather.com/v7/weather/7d?{}", param);
