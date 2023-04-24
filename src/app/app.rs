@@ -22,7 +22,7 @@ fn show_status(
     now: &OffsetDateTime,
 ) -> Result<()> {
     let line = format!(
-        "{} | {} | {:02}:{:02} | {:02}:{:02}",
+        "{} | {} | {:02}:{:02} | {:02}:{:02} (V2)",
         city,
         wifi.ip_addr().unwrap_or(String::from("Unknown IP")),
         weather.last_update().hour(),
@@ -146,7 +146,7 @@ fn show_left_frame(screen: &mut Screen, weather: &WeatherInfo) -> Result<()> {
         let entry = &weather.hour[idx];
         let image = build_32x32_image(entry.icon);
         if !image.is_empty() {
-            screen.bitmap(8, y_cursor, 32, 32, &image, Color::Red)?;
+            screen.bitmap(0, y_cursor, 32, 32, &image, Color::Red)?;
         }
         let text = format!("{}\n{}°C", &entry.time[11..=15], entry.temperature);
         screen.text(8 + 32, y_cursor, 16, &text, Color::Black)?;
@@ -160,7 +160,7 @@ fn show_left_frame(screen: &mut Screen, weather: &WeatherInfo) -> Result<()> {
         let entry = &weather.forecast[idx];
         let image = build_32x32_image(entry.icon);
         if !image.is_empty() {
-            screen.bitmap(8, y_cursor, 32, 32, &image, Color::Red)?;
+            screen.bitmap(0, y_cursor, 32, 32, &image, Color::Red)?;
         }
         let text = format!(
             "{}\n{}~{}°C",
@@ -239,7 +239,7 @@ fn do_refresh() -> bool {
     }
     match now.hour() {
         23 | 0..=6 => now.minute() == 0,
-        _ => now.minute() % 10 == 0,
+        _ => now.minute() % 15 == 0,
     }
 }
 
@@ -284,7 +284,7 @@ pub fn app_main(
         show_right_frame(&mut screen, &sticky)?;
 
         show_status(&mut screen, conf.city, &wifi, &weather, &now)?;
-        ssd1683.draw(&screen, cycle % 3 != 0)?;
+        ssd1683.draw(&screen, false)?;
         cycle += 1;
         sleep(Duration::from_secs(1));
     }
