@@ -177,16 +177,38 @@ fn show_left_frame(screen: &mut Screen, weather: &WeatherInfo) -> Result<()> {
     Ok(())
 }
 
-fn show_quote(screen: &mut Screen) -> Result<()> {
+fn text_lines(text: &str, width: usize) -> usize {
+    assert!(width != 0);
+    let mut count = 0;
+    for line in text.lines() {
+        count += (line.len() + width - 1) / width;
+    }
+    count
+}
+
+fn show_right_frame(screen: &mut Screen, sticky: &str) -> Result<()> {
+    let mut line_idx = 0;
+    if !sticky.is_empty() {
+        let line = text_lines(sticky, 34);
+        if line <= 10 {
+            screen.text(120, 112, 16, sticky, Color::Black)?;
+            line_idx = line;
+        }
+    }
+
     let idx = random::<usize>() % QUOTE_LIST.lines().count();
     let mut quote = QUOTE_LIST.lines();
     for _ in 0..idx {
         _ = quote.next();
     }
     let quote = quote.next().unwrap_or_default();
-    let quote = reformat(quote, 30);
-    screen.text(120, 112, 16, "Quote", Color::InvRed)?;
-    screen.text(120, 112 + 16, 16, &quote, Color::Black)?;
+    let quote = reformat(quote, 34);
+    let quote_lines = quote.lines().count();
+    if line_idx + quote_lines + 1 < 10 {
+        let y = 280 - (quote_lines + 1) * 16;
+        screen.rectangle(200, y + 8, 120, 1, Color::Red)?;
+        screen.text(120, y + 16, 16, &quote, Color::Black)?;
+    }
     Ok(())
 }
 
@@ -210,26 +232,14 @@ fn reformat(input: &str, width: usize) -> String {
     output
 }
 
-#[derive(Clone, PartialEq, Copy, Debug)]
-enum Action {
-    Screen,
-    TimeOnly,
-    None,
-}
-
-fn refresh_action() -> Action {
+fn do_refresh() -> bool {
     let now = now_localtime();
     if now.second() != 0 {
-        return Action::None;
+        return false;
     }
-    let screen_update = match now.hour() {
+    match now.hour() {
         23 | 0..=6 => now.minute() == 0,
         _ => now.minute() % 10 == 0,
-    };
-    if screen_update {
-        Action::Screen
-    } else {
-        Action::TimeOnly
     }
 }
 
@@ -248,30 +258,30 @@ pub fn app_main(
     let mut cycle = 0;
     let mut first_draw = true;
     loop {
-        let mut action = refresh_action();
+        let mut refresh_flag = do_refresh();
+
         if first_draw {
-            action = Action::Screen;
+            refresh_flag = true;
             first_draw = false;
         }
 
-        if action == Action::None {
+        if httpd.get_refresh_flag()? {
+            refresh_flag = true;
+        }
+
+        if !refresh_flag {
             sleep(Duration::from_secs(1));
             continue;
         }
 
         screen.clear(Color::White);
         let now = now_localtime();
-        if action == Action::TimeOnly {
-            sleep(Duration::from_secs(1));
-            continue;
-        }
-
-        assert_eq!(action, Action::Screen);
         weather.try_update();
         let sensor = dht20.read()?;
         show_top_frame(&mut screen, &weather, &now, sensor)?;
         show_left_frame(&mut screen, &weather)?;
-        show_quote(&mut screen)?;
+        let sticky: String = httpd.get_sticky()?;
+        show_right_frame(&mut screen, &sticky)?;
 
         show_status(&mut screen, conf.city, &wifi, &weather, &now)?;
         ssd1683.draw(&screen, cycle % 3 != 0)?;

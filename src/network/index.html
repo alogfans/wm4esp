@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>ESP32 Desk Helper</title>
+    <style>
+        textarea {
+            resize: none;
+            font-family: 'Consolas', 'Courier New', Courier, monospace;
+            font-size: large;
+        }
+        .box {
+            margin: auto;
+            width: 500px;
+            border: 3px solid green;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <form name="sticky", method="post", enctype="text/plain", action="#">
+            <strong>Text of the sticky panel</strong><br>
+            <textarea wrap="hard", cols="34", rows="10", required="true", name="sticky">[[[PLACEHOLDER]]]</textarea><br>
+            <input type="submit" value="Submit">
+        </form>
+        <a href="/refresh">Refresh EPD Screen</a><br>
+    </div>
+</body>
+</html>
