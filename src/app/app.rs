@@ -254,8 +254,6 @@ pub fn app_main(
 
     let mut screen = Screen::new(conf.screen_width, conf.screen_height, Color::White);
     let mut weather = WeatherInfo::new(conf.location, conf.qweather_key);
-
-    let mut cycle = 0;
     let mut first_draw = true;
     loop {
         let mut refresh_flag = do_refresh();
