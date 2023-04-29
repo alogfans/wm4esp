@@ -1,5 +1,4 @@
 mod app;
-mod quotes;
 mod weather;
 mod weather_icons;
 

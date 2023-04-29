@@ -8,6 +8,7 @@
             resize: none;
             font-family: 'Consolas', 'Courier New', Courier, monospace;
             font-size: large;
+            overflow: hidden;
         }
         .box {
             margin: auto;
@@ -20,11 +21,11 @@
 <body>
     <div class="box">
         <form name="sticky", method="post", enctype="text/plain", action="#">
-            <strong>Text of the sticky panel</strong><br>
-            <textarea wrap="hard", cols="34", rows="10", required="true", name="sticky">[[[PLACEHOLDER]]]</textarea><br>
-            <input type="submit" value="Submit">
+            <strong>便签区域内容</strong><br>
+            <textarea wrap="hard", cols="30", rows="11", required="true", name="sticky">[[[PLACEHOLDER]]]</textarea><br>
+            <input type="submit" value="更新">
         </form>
-        <a href="/refresh">Refresh EPD Screen</a><br>
+        <a href="/refresh">刷新墨水屏</a><br>
     </div>
 </body>
 </html>

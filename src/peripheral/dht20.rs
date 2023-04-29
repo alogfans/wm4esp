@@ -1,5 +1,10 @@
 use crate::error::{Result, WmError};
-use esp_idf_hal::{gpio, i2c, units};
+
+use esp_idf_hal::gpio::{InputPin, OutputPin};
+use esp_idf_hal::i2c::I2c;
+use esp_idf_hal::peripheral::Peripheral;
+use esp_idf_hal::{i2c, units};
+
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -11,15 +16,17 @@ pub struct DHT20<'a> {
     device: i2c::I2cDriver<'a>,
 }
 
-impl DHT20<'_> {
-    pub fn new(gpio21: gpio::Gpio21, gpio22: gpio::Gpio22, i2c_dev: i2c::I2C1) -> Result<Self> {
-        let scl = gpio22;
-        let sda = gpio21;
+impl<'a> DHT20<'a> {
+    pub fn new<I2C: I2c>(
+        i2c: impl Peripheral<P = I2C> + 'a,
+        sda: impl Peripheral<P = impl InputPin + OutputPin> + 'a,
+        scl: impl Peripheral<P = impl InputPin + OutputPin> + 'a,
+    ) -> Result<Self> {
         let config = i2c::config::Config::new()
             .baudrate(DEFAULT_BAUD_RATE)
             .scl_enable_pullup(true)
             .sda_enable_pullup(true);
-        let device = i2c::I2cDriver::new(i2c_dev, sda, scl, &config)?;
+        let device = i2c::I2cDriver::new(i2c, sda, scl, &config)?;
         Ok(DHT20 { device })
     }
 

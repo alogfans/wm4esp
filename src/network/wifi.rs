@@ -1,5 +1,5 @@
 use crate::error::Result;
-use std::{fmt::Display, thread::sleep, time::Duration};
+use std::{thread::sleep, time::Duration};
 
 use embedded_svc::wifi::{ClientConfiguration, Configuration, Wifi};
 use esp_idf_hal::modem::Modem;
@@ -33,26 +33,25 @@ impl WifiDevice<'_> {
             }))?;
         self.device.start()?;
         self.device.connect()?;
-        while !self.device.is_connected()? || self.ntp.get_sync_status() == SyncStatus::Reset {
-            sleep(Duration::from_millis(50));
+        while !self.device.is_connected()? {
+            sleep(Duration::from_millis(500));
         }
+        println!("Wi-Fi connection established");
+
+        for _ in 0..20 {
+            if self.ntp.get_sync_status() == SyncStatus::Completed {
+                println!("NTP Server started");
+                break;
+            } else {
+                sleep(Duration::from_millis(500));
+            }
+        }
+
         Ok(())
     }
 
     pub fn ip_addr(&self) -> Result<String> {
         let result = self.device.sta_netif().get_ip_info()?.ip;
         Ok(result.to_string())
-    }
-}
-
-impl Display for WifiDevice<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let result = self.device.sta_netif().get_ip_info();
-        if let Ok(result) = result {
-            write!(f, "Esp32Wifi {:?}", result)?;
-        } else {
-            write!(f, "Esp32Wifi (unknown addr)")?;
-        };
-        Ok(())
     }
 }

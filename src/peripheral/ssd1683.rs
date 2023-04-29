@@ -1,12 +1,10 @@
-use crate::display::{Color, Screen};
-use crate::error::{Result, WmError};
+use crate::display::{Color, Display};
+use crate::error::Result;
 use esp_idf_hal::{gpio, spi, units};
 use std::thread::sleep;
 use std::time::Duration;
 
 const DRIVER_CONTROL: u8 = 0x01;
-const WRITE_DUMMY: u8 = 0x3A;
-const WRITE_GATELINE: u8 = 0x3B;
 const DEEP_SLEEP_MODE: u8 = 0x10;
 const DATA_MODE: u8 = 0x11;
 const DISPLAY_OPTION: u8 = 0x22;
@@ -67,7 +65,7 @@ impl SSD1683<'_> {
         Ok(context)
     }
 
-    pub fn draw(&mut self, screen: &Screen, fast: bool) -> Result<()> {
+    pub fn draw(&mut self, screen: &Display, fast: bool) -> Result<()> {
         self.reset()?;
 
         self.send_command(DRIVER_CONTROL)?;
@@ -76,8 +74,6 @@ impl SSD1683<'_> {
             ((screen.get_height() - 1) >> 8) as u8,
             0,
         ])?;
-        self.send_command_data(WRITE_DUMMY, 0x1B)?;
-        self.send_command_data(WRITE_GATELINE, 0x0B)?;
 
         if fast {
             self.send_command(0x1A)?;
@@ -103,9 +99,6 @@ impl SSD1683<'_> {
             Color::White => self.send_data(&[0b00000001])?,
             Color::Black => self.send_data(&[0b00000000])?,
             Color::Red => self.send_data(&[0b00000110])?,
-            _ => {
-                return Err(WmError::InvalidArgument);
-            }
         }
 
         self.send_command_data(SET_RAMXCOUNT, 0x00)?;
@@ -126,54 +119,6 @@ impl SSD1683<'_> {
             self.send_command_data(DISPLAY_OPTION, 0xF7)?;
         }
 
-        self.send_command(MASTER_ACTIVATE)?;
-        self.wait_for_busy();
-        self.send_command_data(DEEP_SLEEP_MODE, 0x03)?;
-        Ok(())
-    }
-
-    pub fn _draw_partial(
-        &mut self,
-        screen: &Screen,
-        left: usize,
-        right: usize,
-        top: usize,
-        bottom: usize,
-    ) -> Result<()> {
-        self.reset()?;
-
-        self.send_command(DRIVER_CONTROL)?;
-        self.send_data(&[
-            (screen.get_height() - 1) as u8,
-            ((screen.get_height() - 1) >> 8) as u8,
-            0,
-        ])?;
-        self.send_command_data(WRITE_DUMMY, 0x1B)?;
-        self.send_command_data(WRITE_GATELINE, 0x0B)?;
-
-        self.send_command(0x21)?;
-        self.send_data(&[0, 0])?;
-        self.send_command_data(0x3C, 0x80)?;
-
-        self.send_command_data(DATA_MODE, 0x03)?;
-        self.send_command(SET_RAMXPOS)?;
-        self.send_data(&[(left / 8) as u8, (right / 8 - 1) as u8])?;
-        self.send_command(SET_RAMYPOS)?;
-        self.send_data(&[
-            (top) as u8,
-            ((top) >> 8) as u8,
-            (bottom - 1) as u8,
-            ((bottom - 1) >> 8) as u8,
-        ])?;
-        self.send_command_data(SET_RAMXCOUNT, (left / 8) as u8)?;
-        self.send_command(SET_RAMYCOUNT)?;
-        self.send_data(&[(top) as u8, ((top - 1) >> 8) as u8])?;
-        let data = self._build_ram_data_subset(screen, left, right, top, bottom);
-        self.send_command(WRITE_RAM)?;
-        self.send_data(&data)?;
-        self.send_command(WRITE_ALTRAM)?;
-        self.send_data(&data)?;
-        self.send_command_data(DISPLAY_OPTION, 0xC7)?;
         self.send_command(MASTER_ACTIVATE)?;
         self.wait_for_busy();
         self.send_command_data(DEEP_SLEEP_MODE, 0x03)?;
@@ -216,34 +161,13 @@ impl SSD1683<'_> {
         Ok(())
     }
 
-    fn build_ram_data(&self, screen: &Screen, color: Color) -> Vec<u8> {
+    fn build_ram_data(&self, screen: &Display, color: Color) -> Vec<u8> {
         let mut data = Vec::<u8>::new();
         data.resize(screen.get_width() * screen.get_height() / 8, 0);
         for x in 0..screen.get_width() {
             for y in 0..screen.get_height() {
                 let pos = x + y * screen.get_width();
                 if screen.get_pixel(x, y).unwrap() == color {
-                    data[pos / 8] |= 1u8 << (7 - (pos % 8));
-                }
-            }
-        }
-        data
-    }
-
-    fn _build_ram_data_subset(
-        &self,
-        screen: &Screen,
-        left: usize,
-        right: usize,
-        top: usize,
-        bottom: usize,
-    ) -> Vec<u8> {
-        let mut data = Vec::<u8>::new();
-        data.resize((right - left) * (bottom - top) / 8, 0);
-        for x in left..right {
-            for y in top..bottom {
-                let pos = (x - left) + (y - top) * (right - left);
-                if screen.get_pixel(x, y).unwrap() == Color::Black {
                     data[pos / 8] |= 1u8 << (7 - (pos % 8));
                 }
             }

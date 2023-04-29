@@ -65,25 +65,25 @@ impl HttpClient {
 
 pub struct HttpServer {
     server: EspHttpServer,
-    sticky: Arc<Mutex<String>>,
+    note_content: Arc<Mutex<String>>,
     refresh_flag: Arc<Mutex<bool>>,
 }
 
 impl HttpServer {
     pub fn new() -> Result<Self> {
         let server = EspHttpServer::new(&esp_idf_svc::http::server::Configuration::default())?;
-        let sticky = Arc::new(Mutex::new(String::from("")));
+        let note_content = Arc::new(Mutex::new(String::from("")));
         let refresh_flag = Arc::new(Mutex::new(false));
         Ok(HttpServer {
             server,
-            sticky,
+            note_content,
             refresh_flag,
         })
     }
 
-    pub fn get_sticky(&mut self) -> Result<String> {
-        let sticky = self.sticky.lock().unwrap();
-        Ok(sticky.clone())
+    pub fn get_note_content(&mut self) -> Result<String> {
+        let note_content = self.note_content.lock().unwrap();
+        Ok(note_content.clone())
     }
 
     pub fn get_refresh_flag(&mut self) -> Result<bool> {
@@ -97,11 +97,11 @@ impl HttpServer {
     }
 
     pub fn add_handlers(&mut self) -> Result<()> {
-        let sticky = Arc::clone(&self.sticky);
+        let note_content = Arc::clone(&self.note_content);
         self.server.fn_handler("/", Method::Get, move |request| {
             let template = include_str!("index.html");
-            let sticky = sticky.lock().unwrap().clone();
-            let html = template.replace("[[[PLACEHOLDER]]]", &sticky);
+            let note_content = note_content.lock().unwrap().clone();
+            let html = template.replace("[[[PLACEHOLDER]]]", &note_content);
             let mut response = request.into_ok_response()?;
             response.write_all(html.as_bytes())?;
             Ok(())
@@ -119,7 +119,7 @@ impl HttpServer {
                 Ok(())
             })?;
 
-        let sticky = Arc::clone(&self.sticky);
+        let note_content = Arc::clone(&self.note_content);
         self.server.fn_handler("/", Method::Post, move |request| {
             let mut buf = [0_u8; 1024];
             let mut reader = request;
@@ -135,8 +135,8 @@ impl HttpServer {
 
             let result = std::str::from_utf8(&result)?;
             let result = result.trim_start_matches("sticky=").to_string();
-            let mut sticky = sticky.lock().unwrap();
-            *sticky = result;
+            let mut note_content = note_content.lock().unwrap();
+            *note_content = result;
 
             let html = include_str!("completed.html");
             let mut response = reader.into_ok_response()?;

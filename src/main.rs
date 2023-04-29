@@ -1,9 +1,10 @@
 mod app;
-mod common;
+mod config;
 mod display;
 mod error;
 mod network;
 mod peripheral;
+mod resource;
 
 use esp_idf_sys::{self as _};
 // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
@@ -12,7 +13,7 @@ use esp_idf_hal::peripherals;
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 
-use common::CONFIG;
+use config::CONFIG;
 use network::wifi::WifiDevice;
 use peripheral::dht20::DHT20;
 use peripheral::ssd1683::{SSD1683Gpio, SSD1683};
@@ -44,9 +45,9 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     let ssd1683 = SSD1683::new(gpio, peripherals.spi2)?;
 
     let dht20 = DHT20::new(
+        peripherals.i2c1,
         peripherals.pins.gpio21,
         peripherals.pins.gpio22,
-        peripherals.i2c1,
     )?;
 
     app::app_main(ssd1683, dht20, wifi, conf)?;
