@@ -371,7 +371,7 @@ const WEATHER_64_ICON: [[u8; 512]; 10] = [
     ], // 501
 ];
 
-pub fn extract_image(code: i32) -> Option<&'static [u8]> {
+pub fn extract_icon(code: i32) -> Option<&'static [u8]> {
     match code {
         100 => Some(&WEATHER_64_ICON[0]),
         101..=103 => Some(&WEATHER_64_ICON[1]),

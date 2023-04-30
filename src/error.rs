@@ -14,6 +14,7 @@ pub enum WmError {
     EspIOError(EspIOError),
     Utf8Error(Utf8Error),
     InternalError,
+    GlyphNotFound(char),
 }
 
 impl error::Error for WmError {}
@@ -26,6 +27,7 @@ impl fmt::Display for WmError {
             WmError::EspIOError(error) => error.fmt(f),
             WmError::Utf8Error(error) => error.fmt(f),
             WmError::InternalError => write!(f, "Internal Error"),
+            WmError::GlyphNotFound(ch) => write!(f, "GlyphNotFound '{}'", ch),
         }
     }
 }
@@ -57,5 +59,15 @@ impl From<serde_json::Error> for WmError {
 impl From<std::io::Error> for WmError {
     fn from(_: std::io::Error) -> Self {
         WmError::InternalError
+    }
+}
+
+impl From<u8g2_fonts::Error<WmError>> for WmError {
+    fn from(value: u8g2_fonts::Error<WmError>) -> Self {
+        match value {
+            u8g2_fonts::Error::BackgroundColorNotSupported => WmError::InternalError,
+            u8g2_fonts::Error::GlyphNotFound(ch) => WmError::GlyphNotFound(ch),
+            u8g2_fonts::Error::DisplayError(value) => value,
+        }
     }
 }

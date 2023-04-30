@@ -4,7 +4,6 @@ mod display;
 mod error;
 mod network;
 mod peripheral;
-mod resource;
 
 use esp_idf_sys::{self as _};
 // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported

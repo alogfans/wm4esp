@@ -1,13 +1,9 @@
 use crate::error::{Result, WmError};
-use crate::resource::extract_font;
-use embedded_graphics::primitives::Rectangle;
 use embedded_graphics::{
     pixelcolor::raw::{RawData, RawU2},
     pixelcolor::PixelColor,
     prelude::*,
-    // primitives::{Circle, PrimitiveStyle},
 };
-use u8g2_fonts::{fonts, types::*, FontRenderer};
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub enum Color {
@@ -149,66 +145,6 @@ impl Display {
             }
         }
         Ok(())
-    }
-
-    pub fn render_text(
-        &mut self,
-        content: &str,
-        position: Point,
-        fontsize: usize,
-        vertical_pos: VerticalPosition,
-        horizontal_align: HorizontalAlignment,
-        color: Color,
-    ) -> Result<Option<Rectangle>> {
-        let font = match fontsize {
-            8 => FontRenderer::new::<fonts::u8g2_font_6x10_mf>(),
-            14 => FontRenderer::new::<fonts::u8g2_font_courR10_tf>(),
-            16 => FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>(),
-            32 => FontRenderer::new::<fonts::u8g2_font_inr19_mf>(),
-            _ => {
-                return Err(WmError::InvalidArgument);
-            }
-        };
-        let font = font.with_ignore_unknown_chars(true);
-        let rectangle = font
-            .render_aligned(
-                content,
-                position,
-                vertical_pos,
-                horizontal_align,
-                FontColor::Transparent(color),
-                self,
-            )
-            .unwrap_or(None);
-        Ok(rectangle)
-    }
-
-    pub fn render_text_legacy(
-        &mut self,
-        content: &str,
-        position: Point,
-        color: Color,
-    ) -> Result<usize> {
-        let fontsize: usize = 32;
-        let (x, y) = (position.x, position.y);
-        let mut cursor_x = x as usize;
-        let mut cursor_y = y as usize;
-        for ch in content.chars() {
-            if ch == '\n' {
-                cursor_x = x as usize;
-                cursor_y += fontsize;
-                continue;
-            }
-            let font = extract_font(ch);
-            let width = font.len() / fontsize * 8;
-            if cursor_x + width > self.get_width() {
-                cursor_x = x as usize;
-                cursor_y += fontsize;
-            }
-            self.bitmap(cursor_x, cursor_y, width, fontsize, &font, color)?;
-            cursor_x += width;
-        }
-        Ok(cursor_x)
     }
 }
 

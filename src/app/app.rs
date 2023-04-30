@@ -1,5 +1,5 @@
-use super::weather::WeatherInfo;
-use super::weather_icons::extract_image;
+use super::weather::{DailyWeather, WeatherInfo};
+use super::weather_icons::extract_icon;
 use crate::config::Config;
 use crate::display::{Color, Display};
 use crate::error::Result;
@@ -8,14 +8,16 @@ use crate::network::wifi::WifiDevice;
 use crate::peripheral::{dht20::DHT20, ssd1683::SSD1683};
 
 use embedded_graphics::prelude::*;
+use embedded_graphics::primitives::{PrimitiveStyle, Rectangle, StyledDrawable};
+use u8g2_fonts::{fonts, types::*, FontRenderer};
+
 use std::thread::sleep;
 use std::time::Duration;
 use time::{OffsetDateTime, Weekday};
 use time_macros::offset;
-use u8g2_fonts::types::*;
 
 fn show_status(
-    screen: &mut Display,
+    display: &mut Display,
     city: &str,
     wifi: &WifiDevice,
     weather: &WeatherInfo,
@@ -30,138 +32,302 @@ fn show_status(
         now.hour(),
         now.minute()
     );
-    let position = Point::new(screen.get_width() as i32, screen.get_height() as i32);
-    screen.render_text(
-        &content,
+
+    let position = Point::new(display.get_width() as i32, display.get_height() as i32);
+    let font = FontRenderer::new::<fonts::u8g2_font_6x10_mf>().with_ignore_unknown_chars(true);
+    font.render_aligned(
+        &content as &str,
         position,
-        8,
         VerticalPosition::Bottom,
         HorizontalAlignment::Right,
-        Color::Black,
+        FontColor::Transparent(Color::Black),
+        display,
     )?;
+
     Ok(())
 }
 
-fn show_top_frame(screen: &mut Display, weather: &WeatherInfo, now: &OffsetDateTime) -> Result<()> {
-    let image = extract_image(weather.now.icon);
-    if let Some(image) = image {
-        screen.bitmap(0, 0, 64, 64, image, Color::Red)?;
-    }
+fn draw_today(display: &mut Display, base_point: Point, now: &OffsetDateTime) -> Result<()> {
+    Rectangle::new(
+        base_point,
+        Size {
+            width: 128,
+            height: 128,
+        },
+    )
+    .draw_styled(&PrimitiveStyle::with_fill(Color::Red), display)?;
 
+    let elapsed_days = now.date().ordinal();
+    let width = elapsed_days as u32 * 128 / 365;
+    Rectangle::new(base_point, Size { width, height: 4 })
+        .draw_styled(&PrimitiveStyle::with_fill(Color::Black), display)?;
+
+    // Draw Day
+    let content = format!("{}", now.day());
+    let position = base_point
+        + Point {
+            x: 128 / 2,
+            y: 128 / 2,
+        };
+    let font =
+        FontRenderer::new::<fonts::u8g2_font_logisoso46_tn>().with_ignore_unknown_chars(true);
+    font.render_aligned(
+        &content as &str,
+        position,
+        VerticalPosition::Center,
+        HorizontalAlignment::Center,
+        FontColor::Transparent(Color::White),
+        display,
+    )?;
+
+    // Draw YY/MM and Weekday
     let content = format!(
-        "{:02}月{:02}日 {}\n{}°|",
+        "{}/{} {}",
+        now.year(),
         now.month() as i32,
-        now.day(),
-        weekday_to_string(now.weekday()),
-        weather.now.temperature
+        weekday_to_string(now.weekday())
     );
+    let font =
+        FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>().with_ignore_unknown_chars(true);
+    let position = base_point
+        + Point {
+            x: 128 / 2,
+            y: 128 - 8,
+        };
 
-    let position = Point::new(80, 0);
-    let x_offset = screen.render_text_legacy(&content, position, Color::Red)?;
-
-    let content = format!(
-        "{} ({} {} 级)\nAQI {}({}) PM2.5 {}",
-        weather.now.text,
-        weather.now.wind_dir,
-        weather.now.wind_scale,
-        weather.now.aqi,
-        weather.now.aqi_category,
-        weather.now.aqi_pm2p5
-    );
-
-    let position = Point::new(x_offset as i32, 32);
-    screen.render_text(
-        &content,
+    font.render_aligned(
+        &content as &str,
         position,
-        16,
-        VerticalPosition::Top,
-        HorizontalAlignment::Left,
-        Color::Black,
+        VerticalPosition::Bottom,
+        HorizontalAlignment::Center,
+        FontColor::Transparent(Color::White),
+        display,
     )?;
 
     Ok(())
 }
 
-fn show_left_frame(screen: &mut Display, weather: &WeatherInfo, sensor: (f32, f32)) -> Result<()> {
-    let content: String = format!("室温: {:.1}°C\n湿度: {:.1}%", sensor.0, sensor.1);
-    let position = Point::new(0, 70);
-    screen.render_text(
-        &content,
+fn draw_attribute(display: &mut Display, base_point: Point, key: &str, value: &str) -> Result<()> {
+    let font =
+        FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>().with_ignore_unknown_chars(true);
+
+    let position = base_point;
+    font.render_aligned(
+        key,
         position,
-        16,
         VerticalPosition::Top,
         HorizontalAlignment::Left,
-        Color::Black,
+        FontColor::Transparent(Color::Black),
+        display,
     )?;
 
-    if weather.hour.is_empty() || weather.forecast.is_empty() {
-        return Ok(());
-    }
+    let font =
+        FontRenderer::new::<fonts::u8g2_font_logisoso16_tr>().with_ignore_unknown_chars(true);
+    let position = base_point + Point { x: 0, y: 20 };
+    font.render_aligned(
+        value,
+        position,
+        VerticalPosition::Top,
+        HorizontalAlignment::Left,
+        FontColor::Transparent(Color::Red),
+        display,
+    )?;
 
-    let mut y_cursor = 110;
-    for idx in [2, 5, 8] {
-        let entry = &weather.hour[idx];
-        let image = build_32x32_image(entry.icon);
-        if !image.is_empty() {
-            screen.bitmap(0, y_cursor, 32, 32, &image, Color::Red)?;
-        }
-        let content: String = format!("{}\n{}°C", &entry.time[11..=15], entry.temperature);
-        let position = Point::new(8 + 32, y_cursor as i32);
-        screen.render_text(
-            &content,
-            position,
-            14,
-            VerticalPosition::Top,
-            HorizontalAlignment::Left,
-            Color::Black,
+    Ok(())
+}
+
+fn draw_top_banner(
+    display: &mut Display,
+    base_point: Point,
+    weather: &WeatherInfo,
+    sensor: (f32, f32),
+) -> Result<()> {
+    if let Some(bitmap) = extract_icon(weather.now.icon) {
+        display.bitmap(
+            base_point.x as usize,
+            base_point.y as usize,
+            64,
+            64,
+            bitmap,
+            Color::Red,
         )?;
-        y_cursor += 36;
     }
 
-    y_cursor += 8;
+    let content = format!(
+        "{}, {} {} 级",
+        weather.now.text, weather.now.wind_dir, weather.now.wind_scale
+    );
 
-    for idx in [1, 2] {
-        let entry = &weather.forecast[idx];
-        let image = build_32x32_image(entry.icon);
-        if !image.is_empty() {
-            screen.bitmap(0, y_cursor, 32, 32, &image, Color::Red)?;
-        }
-        let content = format!(
+    let font =
+        FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>().with_ignore_unknown_chars(true);
+    font.render_aligned(
+        &content as &str,
+        base_point + Point::new(64 + 8, 4),
+        VerticalPosition::Top,
+        HorizontalAlignment::Left,
+        FontColor::Transparent(Color::Red),
+        display,
+    )?;
+
+    let position = base_point + Point::new(64 + 8, 24);
+    let content = format!("{}|{}", weather.now.temperature, weather.now.humidity);
+    draw_attribute(display, position, "室外 °C|%", &content)?;
+
+    let position = base_point + Point::new(64 + 8 + 96, 24);
+    let content = format!("{:.1}|{:.1}", sensor.0, sensor.1);
+    draw_attribute(display, position, "室内 °C|%", &content)?;
+
+    let content = format!(
+        "空气质量{}，首要污染物{}",
+        weather.now.aqi_category, weather.now.aqi_primary
+    );
+
+    let font =
+        FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>().with_ignore_unknown_chars(true);
+    font.render_aligned(
+        &content as &str,
+        base_point + Point::new(0, 64 + 4),
+        VerticalPosition::Top,
+        HorizontalAlignment::Left,
+        FontColor::Transparent(Color::Red),
+        display,
+    )?;
+
+    let position = base_point + Point::new(0, 24 + 64);
+    let content = format!("{}", weather.now.aqi);
+    draw_attribute(display, position, "AQI", &content)?;
+
+    let position = position + Point::new(36, 0);
+    let content = format!("{}", weather.now.aqi_pm10);
+    draw_attribute(display, position, "PM10", &content)?;
+
+    let position = position + Point::new(48, 0);
+    let content = format!("{}", weather.now.aqi_pm2p5);
+    draw_attribute(display, position, "PM2.5", &content)?;
+
+    let position = position + Point::new(48, 0);
+    let content = format!("{:.1}", weather.now.feels_like);
+    draw_attribute(display, position, "体感 °C", &content)?;
+
+    let position = position + Point::new(64, 0);
+    let content = format!("{}", weather.now.pressure);
+    draw_attribute(display, position, "气压 hPa", &content)?;
+
+    Ok(())
+}
+
+fn draw_forecast_item(
+    display: &mut Display,
+    base_point: Point,
+    entry: &DailyWeather,
+    is_today: bool,
+) -> Result<()> {
+    let icon = build_32x32_icon(entry.icon);
+
+    if !icon.is_empty() {
+        display.bitmap(
+            base_point.x as usize,
+            base_point.y as usize,
+            32,
+            32,
+            &icon,
+            Color::Red,
+        )?;
+    }
+
+    let content = if is_today {
+        format!(
+            "{}\n{}~{}°C\n日出 {}\n日落 {}",
+            &entry.date[5..=9],
+            entry.temp_min,
+            entry.temp_max,
+            entry.sunrise,
+            entry.sunset,
+        )
+    } else {
+        format!(
             "{}\n{}~{}°C",
             &entry.date[5..=9],
             entry.temp_min,
             entry.temp_max
-        );
-        let position = Point::new(8 + 32, y_cursor as i32);
-        screen.render_text(
-            &content,
-            position,
-            14,
-            VerticalPosition::Top,
-            HorizontalAlignment::Left,
-            Color::Black,
-        )?;
-        y_cursor += 36;
+        )
+    };
+
+    let font =
+        FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>().with_ignore_unknown_chars(true);
+    font.render_aligned(
+        &content as &str,
+        base_point + Point::new(36, 0),
+        VerticalPosition::Top,
+        HorizontalAlignment::Left,
+        FontColor::Transparent(Color::Black),
+        display,
+    )?;
+
+    Ok(())
+}
+
+fn draw_common_part(
+    display: &mut Display,
+    weather: &WeatherInfo,
+    now: &OffsetDateTime,
+    sensor: (f32, f32),
+) -> Result<()> {
+    let mut base_point = display.bounding_box().top_left;
+    draw_today(display, base_point, now)?;
+    base_point += Point::new(128 + 8, 0);
+    draw_top_banner(display, base_point, weather, sensor)?;
+
+    base_point = display.bounding_box().top_left + Point::new(0, 128 + 8);
+    if weather.daily.is_empty() {
+        return Ok(());
+    }
+
+    let mut position = base_point;
+    for idx in [0, 1, 2] {
+        let entry = &weather.daily[idx];
+        if idx == 0 {
+            draw_forecast_item(display, position, entry, true)?;
+            position += Point::new(0, 80);
+        } else {
+            draw_forecast_item(display, position, entry, false)?;
+            position += Point::new(0, 40);
+        }
+        if position.y >= display.bounding_box().size.height as i32 {
+            break;
+        }
     }
 
     Ok(())
 }
 
-fn show_right_frame(screen: &mut Display, content: &str) -> Result<()> {
-    let position = Point::new(120, 70);
-    screen.render_text(
+fn draw_custom_part(display: &mut Display, content: &str) -> Result<()> {
+    let position = Point::new(128 + 8, 128 + 8);
+    let font = if content.is_ascii() {
+        FontRenderer::new::<fonts::u8g2_font_courR10_tf>()
+    } else {
+        FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>()
+    }
+    .with_ignore_unknown_chars(true);
+    font.render_aligned(
         content,
         position,
-        16,
         VerticalPosition::Top,
         HorizontalAlignment::Left,
-        Color::Black,
+        FontColor::Transparent(Color::Black),
+        display,
     )?;
     Ok(())
 }
 
 fn require_refresh(now: &OffsetDateTime) -> bool {
-    now.minute() % 30 == 0 && now.second() == 0
+    if now.minute() != 0 || now.second() != 0 {
+        return false;
+    }
+    match now.hour() {
+        7..=23 => true,
+        _ => false
+    }
 }
 
 pub fn app_main(
@@ -184,9 +350,8 @@ pub fn app_main(
             let sensor = dht20.read()?;
             let content: String = httpd.get_note_content()?;
             display.clear(Color::White);
-            show_top_frame(&mut display, &weather, &now)?;
-            show_left_frame(&mut display, &weather, sensor)?;
-            show_right_frame(&mut display, &content)?;
+            draw_common_part(&mut display, &weather, &now, sensor)?;
+            draw_custom_part(&mut display, &content)?;
             show_status(&mut display, conf.city, &wifi, &weather, &now)?;
             ssd1683.draw(&display, false)?;
         }
@@ -219,8 +384,8 @@ fn get_bit(image: &[u8], size: usize, i: usize, j: usize) -> u8 {
     }
 }
 
-fn build_32x32_image(code: i32) -> Vec<u8> {
-    if let Some(image) = extract_image(code) {
+fn build_32x32_icon(code: i32) -> Vec<u8> {
+    if let Some(image) = extract_icon(code) {
         let mut new_image = Vec::new();
         new_image.resize(32 * 32 / 8, 0);
         for i in 0..32 {
@@ -229,7 +394,7 @@ fn build_32x32_image(code: i32) -> Vec<u8> {
                     + get_bit(image, 64, i * 2 + 1, j * 2)
                     + get_bit(image, 64, i * 2, j * 2 + 1)
                     + get_bit(image, 64, i * 2 + 1, j * 2 + 1);
-                if val >= 2 {
+                if val > 2 {
                     let pos = i * 32 + j;
                     new_image[pos / 8] |= 1u8 << (7 - (pos % 8) as u8);
                 }

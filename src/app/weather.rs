@@ -3,18 +3,11 @@ use crate::network::http::HttpClient;
 use serde_json::Map;
 use serde_json::Value;
 use std::ops::Sub;
+use time::OffsetDateTime;
 use time_macros::offset;
 
 #[derive(Default)]
-struct Config {
-    weather_url: String,
-    aqi_url: String,
-    weather_7d_url: String,
-    weather_24h_url: String,
-}
-
-#[derive(Default)]
-pub struct WeatherNow {
+pub struct CurrentWeather {
     pub text: String,
     pub temperature: i32,
     pub feels_like: i32,
@@ -33,7 +26,7 @@ pub struct WeatherNow {
 }
 
 #[derive(Default)]
-pub struct WeatherHour {
+pub struct HourlyWeather {
     pub time: String,
     pub text: String,
     pub temperature: i32,
@@ -47,7 +40,7 @@ pub struct WeatherHour {
 }
 
 #[derive(Default)]
-pub struct WeatherForecast {
+pub struct DailyWeather {
     pub date: String,
     pub text: String,
     pub temp_min: i32,
@@ -57,33 +50,30 @@ pub struct WeatherForecast {
     pub wind_dir: String,
     pub wind_scale: String,
     pub icon: i32,
+    pub sunrise: String,
+    pub sunset: String,
 }
 
 pub struct WeatherInfo {
     last_update: time::OffsetDateTime,
-    pub now: WeatherNow,
-    pub hour: Vec<WeatherHour>,
-    pub forecast: Vec<WeatherForecast>,
-    cfg: Config,
+    pub now: CurrentWeather,
+    pub hourly: Vec<HourlyWeather>,
+    pub daily: Vec<DailyWeather>,
+    param: String,
 }
 
 impl Default for WeatherInfo {
     fn default() -> Self {
         let last_update = time::OffsetDateTime::UNIX_EPOCH;
-        let now = WeatherNow {
+        let now = CurrentWeather {
             ..Default::default()
         };
-        let cfg = Config {
-            ..Default::default()
-        };
-        let forecast = Vec::new();
-        let hour = Vec::new();
         WeatherInfo {
             last_update,
             now,
-            hour,
-            forecast,
-            cfg,
+            hourly: Vec::new(),
+            daily: Vec::new(),
+            param: "".into(),
         }
     }
 }
@@ -154,33 +144,22 @@ macro_rules! json_f32 {
 impl WeatherInfo {
     pub fn new(location: &str, key: &str) -> Self {
         let param = format!("location={}&key={}&lang=cn", location, key);
-        let weather_url = format!("https://devapi.qweather.com/v7/weather/now?{}", param);
-        let aqi_url = format!("https://devapi.qweather.com/v7/air/now?{}", param);
-        let weather_7d_url = format!("https://devapi.qweather.com/v7/weather/7d?{}", param);
-        let weather_24h_url = format!("https://devapi.qweather.com/v7/weather/24h?{}", param);
-        let cfg = Config {
-            weather_url,
-            aqi_url,
-            weather_7d_url,
-            weather_24h_url,
-        };
         WeatherInfo {
-            cfg,
+            param,
             ..Default::default()
         }
     }
 
-    pub fn try_update(&mut self) {
-        let now = time::OffsetDateTime::now_utc();
-        if now.sub(self.last_update).whole_minutes() < 30 {
-            return;
-        }
+    fn try_update_current_weather(&mut self, now: OffsetDateTime) {
+        let url = format!("https://devapi.qweather.com/v7/weather/now?{}", self.param);
+        let weather = get_json_map(&url, "now");
 
-        let weather = get_json_map(&self.cfg.weather_url, "now");
-        let aqi = get_json_map(&self.cfg.aqi_url, "now");
+        let url = format!("https://devapi.qweather.com/v7/air/now?{}", self.param);
+        let aqi = get_json_map(&url, "now");
+
         if let Ok(weather) = weather {
             if let Ok(aqi) = aqi {
-                self.now = WeatherNow {
+                self.now = CurrentWeather {
                     text: json_str!(weather, "text"),
                     temperature: json_i32!(weather, "temp"),
                     feels_like: json_i32!(weather, "feelsLike"),
@@ -200,13 +179,16 @@ impl WeatherInfo {
                 self.last_update = now;
             }
         }
+    }
 
-        let weather_7d = get_json_vector(&self.cfg.weather_7d_url, "daily");
-        if let Ok(weather_7d) = weather_7d {
-            self.forecast.clear();
-            for entry in weather_7d.iter() {
+    fn try_update_daily_weather(&mut self) {
+        let url = format!("https://devapi.qweather.com/v7/weather/3d?{}", self.param);
+        let weather = get_json_vector(&url, "daily");
+        if let Ok(weather) = weather {
+            self.daily.clear();
+            for entry in weather.iter() {
                 if let Some(entry) = entry.as_object() {
-                    let result = WeatherForecast {
+                    let result = DailyWeather {
                         date: json_str!(entry, "fxDate"),
                         text: json_str!(entry, "textDay"),
                         temp_min: json_i32!(entry, "tempMin"),
@@ -216,19 +198,23 @@ impl WeatherInfo {
                         wind_scale: json_str!(entry, "windScaleDay"),
                         precipitation: json_f32!(entry, "precip"),
                         icon: json_i32!(entry, "iconDay"),
+                        sunrise: json_str!(entry, "sunrise"),
+                        sunset: json_str!(entry, "sunset"),
                     };
-                    self.forecast.push(result);
+                    self.daily.push(result);
                 }
             }
         }
+    }
 
-        let weather_24h = get_json_vector(&self.cfg.weather_24h_url, "hourly");
-
-        if let Ok(weather_24h) = weather_24h {
-            self.hour.clear();
-            for entry in weather_24h.iter() {
+    fn _try_update_hourly_weather(&mut self) {
+        let url = format!("https://devapi.qweather.com/v7/weather/24h?{}", self.param);
+        let weather = get_json_vector(&url, "hourly");
+        if let Ok(weather) = weather {
+            self.hourly.clear();
+            for entry in weather.iter() {
                 if let Some(entry) = entry.as_object() {
-                    let result = WeatherHour {
+                    let result = HourlyWeather {
                         time: json_str!(entry, "fxTime"),
                         text: json_str!(entry, "text"),
                         temperature: json_i32!(entry, "temp"),
@@ -240,9 +226,18 @@ impl WeatherInfo {
                         wind_speed: json_i32!(entry, "windSpeed"),
                         icon: json_i32!(entry, "icon"),
                     };
-                    self.hour.push(result);
+                    self.hourly.push(result);
                 }
             }
+        }
+    }
+
+    pub fn try_update(&mut self) {
+        let now = time::OffsetDateTime::now_utc();
+        if now.sub(self.last_update).whole_minutes() > 30 {
+            self.try_update_current_weather(now);
+            self.try_update_daily_weather();
+            // self._try_update_hourly_weather();
         }
     }
 
