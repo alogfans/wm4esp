@@ -162,6 +162,14 @@ impl HttpServer {
                 Ok(())
             })?;
 
+        self.server
+            .fn_handler("/report", Method::Get, move |request| {
+                let html = include_str!("report.html");
+                let mut response = request.into_ok_response()?;
+                response.write_all(html.as_bytes())?;
+                Ok(())
+            })?;
+
         let note_content = Arc::clone(&self.note_content);
         self.server.fn_handler("/", Method::Post, move |request| {
             let mut buf = [0_u8; 1024];
