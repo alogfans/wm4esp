@@ -2,7 +2,6 @@ use crate::error::{Result, WmError};
 use crate::network::http::HttpClient;
 use serde_json::Map;
 use serde_json::Value;
-use std::ops::Sub;
 use time::OffsetDateTime;
 use time_macros::offset;
 
@@ -234,11 +233,9 @@ impl WeatherInfo {
 
     pub fn try_update(&mut self) {
         let now = time::OffsetDateTime::now_utc();
-        if now.sub(self.last_update).whole_minutes() > 30 {
-            self.try_update_current_weather(now);
-            self.try_update_daily_weather();
-            // self._try_update_hourly_weather();
-        }
+        self.try_update_current_weather(now);
+        self.try_update_daily_weather();
+        // self._try_update_hourly_weather();
     }
 
     pub fn last_update(&self) -> time::OffsetDateTime {

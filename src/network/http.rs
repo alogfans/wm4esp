@@ -7,8 +7,10 @@ use embedded_svc::{http::Method, io::Write};
 use esp_idf_svc::http::client::EspHttpConnection;
 use esp_idf_svc::http::server::EspHttpServer;
 use flate2::read::GzDecoder;
+use serde::{Deserialize, Serialize};
 use std::io::Read as _;
 use std::sync::{Arc, Mutex};
+use time::OffsetDateTime;
 
 pub struct HttpClient {
     client: Client<EspHttpConnection>,
@@ -63,10 +65,29 @@ impl HttpClient {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct SensorRecord {
+    time: String,
+    temp: f32,
+    humidity: f32,
+}
+
+impl SensorRecord {
+    fn new(datetime: OffsetDateTime, sensor: (f32, f32)) -> Self {
+        let time = format!("{:02}:{:02}", datetime.hour(), datetime.minute());
+        SensorRecord {
+            time,
+            temp: sensor.0,
+            humidity: sensor.1,
+        }
+    }
+}
+
 pub struct HttpServer {
     server: EspHttpServer,
     note_content: Arc<Mutex<String>>,
     refresh_flag: Arc<Mutex<bool>>,
+    sensor_data: Arc<Mutex<Vec<SensorRecord>>>,
 }
 
 impl HttpServer {
@@ -74,11 +95,23 @@ impl HttpServer {
         let server = EspHttpServer::new(&esp_idf_svc::http::server::Configuration::default())?;
         let note_content = Arc::new(Mutex::new(String::from("")));
         let refresh_flag = Arc::new(Mutex::new(false));
+        let sensor_data = Arc::new(Mutex::new(Vec::new()));
         Ok(HttpServer {
             server,
             note_content,
             refresh_flag,
+            sensor_data,
         })
+    }
+
+    pub fn add_sensor_data(&mut self, datetime: OffsetDateTime, sensor: (f32, f32)) -> Result<()> {
+        let mut sensor_data = self.sensor_data.lock().unwrap();
+        let record = SensorRecord::new(datetime, sensor);
+        if datetime.time().as_hms() == (0, 0, 0) {
+            sensor_data.clear();
+        }
+        sensor_data.push(record);
+        Ok(())
     }
 
     pub fn get_note_content(&mut self) -> Result<String> {
@@ -116,6 +149,16 @@ impl HttpServer {
                 let html = include_str!("completed.html");
                 let mut response = request.into_ok_response()?;
                 response.write_all(html.as_bytes())?;
+                Ok(())
+            })?;
+
+        let sensor_data = Arc::clone(&self.sensor_data);
+        self.server
+            .fn_handler("/sensor", Method::Get, move |request| {
+                let sensor_data = sensor_data.lock().unwrap();
+                let json = serde_json::to_string(&*sensor_data).unwrap_or("".into());
+                let mut response = request.into_ok_response()?;
+                response.write_all(json.as_bytes())?;
                 Ok(())
             })?;
 

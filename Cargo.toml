@@ -29,6 +29,7 @@ flate2 = "1.0.25"
 rand = "0.8.5"
 u8g2-fonts = "0.2.0"
 embedded-graphics = "0.7.1"
+serde = "1.0.163"
 
 [build-dependencies]
 embuild = "0.31.1"

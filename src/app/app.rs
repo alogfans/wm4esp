@@ -326,7 +326,7 @@ fn require_refresh(now: &OffsetDateTime) -> bool {
     }
     match now.hour() {
         7..=23 => true,
-        _ => false
+        _ => false,
     }
 }
 
@@ -342,12 +342,16 @@ pub fn app_main(
     let mut display = Display::new(400, 300, Color::White);
     let mut weather = WeatherInfo::new(conf.location, conf.qweather_key);
     let mut first_draw = true;
+    let mut sensor = dht20.read()?;
     loop {
         let now = now_localtime();
+        if now.second() == 0 {
+            sensor = dht20.read()?;
+            httpd.add_sensor_data(now, sensor)?;
+        }
         if first_draw || httpd.get_refresh_flag()? || require_refresh(&now) {
             first_draw = false;
             weather.try_update();
-            let sensor = dht20.read()?;
             let content: String = httpd.get_note_content()?;
             display.clear(Color::White);
             draw_common_part(&mut display, &weather, &now, sensor)?;
