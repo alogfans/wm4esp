@@ -107,7 +107,7 @@ impl HttpServer {
     pub fn add_sensor_data(&mut self, datetime: OffsetDateTime, sensor: (f32, f32)) -> Result<()> {
         let mut sensor_data = self.sensor_data.lock().unwrap();
         let record = SensorRecord::new(datetime, sensor);
-        if datetime.time().as_hms() == (0, 0, 0) {
+        if sensor_data.len() >= 12 * 24 {
             sensor_data.clear();
         }
         sensor_data.push(record);

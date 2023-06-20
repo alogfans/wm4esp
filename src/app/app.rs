@@ -16,19 +16,10 @@ use std::time::Duration;
 use time::{OffsetDateTime, Weekday};
 use time_macros::offset;
 
-fn show_status(
-    display: &mut Display,
-    city: &str,
-    wifi: &WifiDevice,
-    weather: &WeatherInfo,
-    now: &OffsetDateTime,
-) -> Result<()> {
+fn show_status(display: &mut Display, wifi: &WifiDevice, now: &OffsetDateTime) -> Result<()> {
     let content = format!(
-        "{} | {} | {:02}:{:02} | {:02}:{:02} (V2.1)",
-        city,
+        "{} | {:02}:{:02} | V2.2",
         wifi.ip_addr().unwrap_or(String::from("N/A")),
-        weather.last_update().hour(),
-        weather.last_update().minute(),
         now.hour(),
         now.minute()
     );
@@ -60,7 +51,7 @@ fn draw_today(display: &mut Display, base_point: Point, now: &OffsetDateTime) ->
     let elapsed_days = now.date().ordinal();
     let width = elapsed_days as u32 * 128 / 365;
     Rectangle::new(base_point, Size { width, height: 4 })
-        .draw_styled(&PrimitiveStyle::with_fill(Color::Black), display)?;
+        .draw_styled(&PrimitiveStyle::with_fill(Color::White), display)?;
 
     // Draw Day
     let content = format!("{}", now.day());
@@ -109,21 +100,21 @@ fn draw_today(display: &mut Display, base_point: Point, now: &OffsetDateTime) ->
 
 fn draw_attribute(display: &mut Display, base_point: Point, key: &str, value: &str) -> Result<()> {
     let font =
-        FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>().with_ignore_unknown_chars(true);
+        FontRenderer::new::<fonts::u8g2_font_wqy12_t_gb2312a>().with_ignore_unknown_chars(true);
 
-    let position = base_point;
+    let position = base_point + Point { x: 0, y: 0 };
     font.render_aligned(
         key,
         position,
         VerticalPosition::Top,
         HorizontalAlignment::Left,
-        FontColor::Transparent(Color::Black),
+        FontColor::Transparent(Color::Red),
         display,
     )?;
 
     let font =
         FontRenderer::new::<fonts::u8g2_font_logisoso16_tr>().with_ignore_unknown_chars(true);
-    let position = base_point + Point { x: 0, y: 20 };
+    let position = base_point + Point { x: 0, y: 17 };
     font.render_aligned(
         value,
         position,
@@ -153,10 +144,24 @@ fn draw_top_banner(
         )?;
     }
 
-    let content = format!(
-        "{}, {} {} 级",
-        weather.now.text, weather.now.wind_dir, weather.now.wind_scale
-    );
+    let content = if weather.now.aqi_primary == "NA" {
+        format!(
+            "{} {} {} 级\n空气质量 {}",
+            weather.now.text,
+            weather.now.wind_dir,
+            weather.now.wind_scale,
+            weather.now.aqi_category
+        )
+    } else {
+        format!(
+            "{} {} {} 级\n空气质量 {} 首要 {}",
+            weather.now.text,
+            weather.now.wind_dir,
+            weather.now.wind_scale,
+            weather.now.aqi_category,
+            weather.now.aqi_primary
+        )
+    };
 
     let font =
         FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>().with_ignore_unknown_chars(true);
@@ -165,51 +170,35 @@ fn draw_top_banner(
         base_point + Point::new(64 + 8, 4),
         VerticalPosition::Top,
         HorizontalAlignment::Left,
-        FontColor::Transparent(Color::Red),
+        FontColor::Transparent(Color::Black),
         display,
     )?;
 
-    let position = base_point + Point::new(64 + 8, 24);
+    let position = base_point + Point::new(64 + 8, 24 + 20);
     let content = format!("{}|{}", weather.now.temperature, weather.now.humidity);
     draw_attribute(display, position, "室外 °C|%", &content)?;
 
-    let position = base_point + Point::new(64 + 8 + 96, 24);
+    let position = base_point + Point::new(64 + 8 + 96, 24 + 20);
     let content = format!("{:.1}|{:.1}", sensor.0, sensor.1);
     draw_attribute(display, position, "室内 °C|%", &content)?;
-
-    let content = format!(
-        "空气质量{}，首要污染物{}",
-        weather.now.aqi_category, weather.now.aqi_primary
-    );
-
-    let font =
-        FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>().with_ignore_unknown_chars(true);
-    font.render_aligned(
-        &content as &str,
-        base_point + Point::new(0, 64 + 4),
-        VerticalPosition::Top,
-        HorizontalAlignment::Left,
-        FontColor::Transparent(Color::Red),
-        display,
-    )?;
 
     let position = base_point + Point::new(0, 24 + 64);
     let content = format!("{}", weather.now.aqi);
     draw_attribute(display, position, "AQI", &content)?;
 
-    let position = position + Point::new(36, 0);
+    let position = position + Point::new(36 + 12, 0);
     let content = format!("{}", weather.now.aqi_pm10);
     draw_attribute(display, position, "PM10", &content)?;
 
-    let position = position + Point::new(48, 0);
+    let position = position + Point::new(36 + 12, 0);
     let content = format!("{}", weather.now.aqi_pm2p5);
     draw_attribute(display, position, "PM2.5", &content)?;
 
-    let position = position + Point::new(48, 0);
+    let position = position + Point::new(36 + 12, 0);
     let content = format!("{:.1}", weather.now.feels_like);
     draw_attribute(display, position, "体感 °C", &content)?;
 
-    let position = position + Point::new(64, 0);
+    let position = position + Point::new(36 + 12, 0);
     let content = format!("{}", weather.now.pressure);
     draw_attribute(display, position, "气压 hPa", &content)?;
 
@@ -254,7 +243,7 @@ fn draw_forecast_item(
     };
 
     let font =
-        FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>().with_ignore_unknown_chars(true);
+        FontRenderer::new::<fonts::u8g2_font_wqy15_t_gb2312a>().with_ignore_unknown_chars(true);
     font.render_aligned(
         &content as &str,
         base_point + Point::new(36, 0),
@@ -302,7 +291,7 @@ fn draw_common_part(
 }
 
 fn draw_custom_part(display: &mut Display, content: &str) -> Result<()> {
-    let position = Point::new(128 + 8, 128 + 8);
+    let position = Point::new(128 + 8, (128 + 300) / 2);
     let font = if content.is_ascii() {
         FontRenderer::new::<fonts::u8g2_font_courR10_tf>()
     } else {
@@ -312,9 +301,9 @@ fn draw_custom_part(display: &mut Display, content: &str) -> Result<()> {
     font.render_aligned(
         content,
         position,
-        VerticalPosition::Top,
+        VerticalPosition::Center,
         HorizontalAlignment::Left,
-        FontColor::Transparent(Color::Black),
+        FontColor::Transparent(Color::Red),
         display,
     )?;
     Ok(())
@@ -345,7 +334,7 @@ pub fn app_main(
     let mut sensor = dht20.read()?;
     loop {
         let now = now_localtime();
-        if now.second() == 0 {
+        if now.second() == 0 && now.minute() % 5 == 0 {
             sensor = dht20.read()?;
             httpd.add_sensor_data(now, sensor)?;
         }
@@ -356,7 +345,7 @@ pub fn app_main(
             display.clear(Color::White);
             draw_common_part(&mut display, &weather, &now, sensor)?;
             draw_custom_part(&mut display, &content)?;
-            show_status(&mut display, conf.city, &wifi, &weather, &now)?;
+            show_status(&mut display, &wifi, &now)?;
             ssd1683.draw(&display, false)?;
         }
         sleep(Duration::from_secs(1));

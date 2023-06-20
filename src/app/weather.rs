@@ -2,8 +2,6 @@ use crate::error::{Result, WmError};
 use crate::network::http::HttpClient;
 use serde_json::Map;
 use serde_json::Value;
-use time::OffsetDateTime;
-use time_macros::offset;
 
 #[derive(Default)]
 pub struct CurrentWeather {
@@ -54,7 +52,6 @@ pub struct DailyWeather {
 }
 
 pub struct WeatherInfo {
-    last_update: time::OffsetDateTime,
     pub now: CurrentWeather,
     pub hourly: Vec<HourlyWeather>,
     pub daily: Vec<DailyWeather>,
@@ -63,12 +60,10 @@ pub struct WeatherInfo {
 
 impl Default for WeatherInfo {
     fn default() -> Self {
-        let last_update = time::OffsetDateTime::UNIX_EPOCH;
         let now = CurrentWeather {
             ..Default::default()
         };
         WeatherInfo {
-            last_update,
             now,
             hourly: Vec::new(),
             daily: Vec::new(),
@@ -149,7 +144,7 @@ impl WeatherInfo {
         }
     }
 
-    fn try_update_current_weather(&mut self, now: OffsetDateTime) {
+    fn try_update_current_weather(&mut self) {
         let url = format!("https://devapi.qweather.com/v7/weather/now?{}", self.param);
         let weather = get_json_map(&url, "now");
 
@@ -175,7 +170,6 @@ impl WeatherInfo {
                     aqi_pm2p5: json_i32!(aqi, "pm2p5"),
                     icon: json_i32!(weather, "icon"),
                 };
-                self.last_update = now;
             }
         }
     }
@@ -232,13 +226,7 @@ impl WeatherInfo {
     }
 
     pub fn try_update(&mut self) {
-        let now = time::OffsetDateTime::now_utc();
-        self.try_update_current_weather(now);
+        self.try_update_current_weather();
         self.try_update_daily_weather();
-        // self._try_update_hourly_weather();
-    }
-
-    pub fn last_update(&self) -> time::OffsetDateTime {
-        self.last_update.to_offset(offset!(+8))
     }
 }
