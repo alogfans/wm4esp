@@ -6,7 +6,6 @@ use embedded_svc::io::Read;
 use embedded_svc::{http::Method, io::Write};
 use esp_idf_svc::http::client::EspHttpConnection;
 use esp_idf_svc::http::server::EspHttpServer;
-use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use std::io::Read as _;
 use std::sync::{Arc, Mutex};
@@ -49,12 +48,12 @@ impl HttpClient {
                     }
                 }
                 if gzip {
-                    let mut d = GzDecoder::new(result.as_slice());
+                    let mut d = libflate::gzip::Decoder::new(result.as_slice()).unwrap();
                     let mut result = String::new();
                     d.read_to_string(&mut result).unwrap();
                     return Ok(result);
                 } else {
-                    let result = String::from(std::str::from_utf8(&result)?);
+                    let result = String::from_utf8(result).unwrap();
                     return Ok(result);
                 }
             }

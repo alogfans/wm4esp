@@ -48,10 +48,10 @@ fn draw_today(display: &mut Display, base_point: Point, now: &OffsetDateTime) ->
     )
     .draw_styled(&PrimitiveStyle::with_fill(Color::Red), display)?;
 
-    let elapsed_days = now.date().ordinal();
-    let width = elapsed_days as u32 * 128 / 365;
-    Rectangle::new(base_point, Size { width, height: 4 })
-        .draw_styled(&PrimitiveStyle::with_fill(Color::White), display)?;
+    // let elapsed_days = now.date().ordinal();
+    // let width = elapsed_days as u32 * 128 / 365;
+    // Rectangle::new(base_point, Size { width, height: 4 })
+    //     .draw_styled(&PrimitiveStyle::with_fill(Color::White), display)?;
 
     // Draw Day
     let content = format!("{}", now.day());
@@ -146,59 +146,69 @@ fn draw_top_banner(
 
     let content = if weather.now.aqi_primary == "NA" {
         format!(
-            "{} {} {} 级\n空气质量 {}",
-            weather.now.text,
-            weather.now.wind_dir,
-            weather.now.wind_scale,
-            weather.now.aqi_category
-        )
-    } else {
-        format!(
-            "{} {} {} 级\n空气质量 {} 首要 {}",
+            "{} {} {} 级\n空气质量 {} ({})",
             weather.now.text,
             weather.now.wind_dir,
             weather.now.wind_scale,
             weather.now.aqi_category,
+            weather.now.aqi
+        )
+    } else {
+        format!(
+            "{} {} {} 级\n空气质量 {} ({}) {}",
+            weather.now.text,
+            weather.now.wind_dir,
+            weather.now.wind_scale,
+            weather.now.aqi_category,
+            weather.now.aqi,
             weather.now.aqi_primary
         )
     };
 
-    let font =
-        FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>().with_ignore_unknown_chars(true);
-    font.render_aligned(
-        &content as &str,
-        base_point + Point::new(64 + 8, 4),
-        VerticalPosition::Top,
-        HorizontalAlignment::Left,
-        FontColor::Transparent(Color::Black),
-        display,
-    )?;
+    if weather.valid {
+        let font =
+            FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>().with_ignore_unknown_chars(true);
+        font.render_aligned(
+            &content as &str,
+            base_point + Point::new(64 + 8, 4),
+            VerticalPosition::Top,
+            HorizontalAlignment::Left,
+            FontColor::Transparent(Color::Black),
+            display,
+        )?;
+    }
 
     let position = base_point + Point::new(64 + 8, 24 + 20);
     let content = format!("{}|{}", weather.now.temperature, weather.now.humidity);
-    draw_attribute(display, position, "室外 °C|%", &content)?;
+    if weather.valid {
+        draw_attribute(display, position, "室外 °C|%", &content)?;
+    }
 
     let position = base_point + Point::new(64 + 8 + 96, 24 + 20);
     let content = format!("{:.1}|{:.1}", sensor.0, sensor.1);
     draw_attribute(display, position, "室内 °C|%", &content)?;
 
+    if !weather.valid {
+        return Ok(());
+    }
+
     let position = base_point + Point::new(0, 24 + 64);
-    let content = format!("{}", weather.now.aqi);
-    draw_attribute(display, position, "AQI", &content)?;
-
-    let position = position + Point::new(36 + 12, 0);
     let content = format!("{}", weather.now.aqi_pm10);
-    draw_attribute(display, position, "PM10", &content)?;
+    draw_attribute(display, position, "PM10 ug", &content)?;
 
-    let position = position + Point::new(36 + 12, 0);
+    let position = position + Point::new(36 + 16, 0);
     let content = format!("{}", weather.now.aqi_pm2p5);
-    draw_attribute(display, position, "PM2.5", &content)?;
+    draw_attribute(display, position, "PM2.5 ug", &content)?;
 
-    let position = position + Point::new(36 + 12, 0);
+    let position = position + Point::new(36 + 16, 0);
+    let content = format!("{:.1}", weather.now.precipitation);
+    draw_attribute(display, position, "降水 mm", &content)?;
+
+    let position = position + Point::new(36 + 16, 0);
     let content = format!("{:.1}", weather.now.feels_like);
     draw_attribute(display, position, "体感 °C", &content)?;
 
-    let position = position + Point::new(36 + 12, 0);
+    let position = position + Point::new(36 + 16, 0);
     let content = format!("{}", weather.now.pressure);
     draw_attribute(display, position, "气压 hPa", &content)?;
 
@@ -243,7 +253,7 @@ fn draw_forecast_item(
     };
 
     let font =
-        FontRenderer::new::<fonts::u8g2_font_wqy15_t_gb2312a>().with_ignore_unknown_chars(true);
+        FontRenderer::new::<fonts::u8g2_font_wqy16_t_gb2312>().with_ignore_unknown_chars(true);
     font.render_aligned(
         &content as &str,
         base_point + Point::new(36, 0),
@@ -327,8 +337,6 @@ pub fn app_main(
 ) -> Result<()> {
     let mut httpd = HttpServer::new()?;
     httpd.add_handlers()?;
-
-    let mut display = Display::new(400, 300, Color::White);
     let mut weather = WeatherInfo::new(conf.location, conf.qweather_key);
     let mut first_draw = true;
     let mut sensor = dht20.read()?;
@@ -342,6 +350,7 @@ pub fn app_main(
             first_draw = false;
             weather.try_update();
             let content: String = httpd.get_note_content()?;
+            let mut display = Display::new(400, 300, Color::White);
             display.clear(Color::White);
             draw_common_part(&mut display, &weather, &now, sensor)?;
             draw_custom_part(&mut display, &content)?;

@@ -55,6 +55,7 @@ pub struct WeatherInfo {
     pub now: CurrentWeather,
     pub hourly: Vec<HourlyWeather>,
     pub daily: Vec<DailyWeather>,
+    pub valid: bool,
     param: String,
 }
 
@@ -67,6 +68,7 @@ impl Default for WeatherInfo {
             now,
             hourly: Vec::new(),
             daily: Vec::new(),
+            valid: false,
             param: "".into(),
         }
     }
@@ -170,6 +172,7 @@ impl WeatherInfo {
                     aqi_pm2p5: json_i32!(aqi, "pm2p5"),
                     icon: json_i32!(weather, "icon"),
                 };
+                self.valid = true;
             }
         }
     }
